@@ -7,18 +7,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class ResearchMatcher:
-    def __init__(self, model_name='sentence-transformers/allenai-specter'):
+    def __init__(self, model_name='Alibaba-NLP/gte-Qwen2-1.5B-instruct', trust_remote_code=True):
         """
-        Initializes the matcher with the SPECTER model (via HuggingFace).
-        SPECTER is specialized for scientific document similarity.
+        Initializes the matcher with the Qwen2-1.5B model.
+        Qwen is a state-of-the-art multilingual model that excels at long-context retrieval.
+        It supports Chinese and English perfectly.
         """
-        logger.info(f"Loading Academic AI Model: {model_name}...")
+        logger.info(f"Loading Enterprise AI Model: {model_name}...")
         try:
-            # We use the HuggingFace ID for SPECTER
-            self.model = SentenceTransformer(model_name)
-            logger.info("Academic AI Model (SPECTER) loaded successfully.")
+            # trust_remote_code is needed for some new architectures, though sentence-transformers usually handles it
+            self.model = SentenceTransformer(model_name, trust_remote_code=trust_remote_code)
+            logger.info(f"Enterprise AI Model ({model_name}) loaded successfully.")
         except Exception as e:
-            logger.error(f"Failed to load AI model: {e}")
+            logger.error(f"Failed to load Qwen model: {e}")
             logger.warning("Falling back to lightweight model 'all-MiniLM-L6-v2'")
             try:
                 self.model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -45,9 +46,11 @@ class ResearchMatcher:
         if not self.model or not query:
             return candidates
 
-        # For SPECTER, queries should ideally be paper titles/abstracts, 
-        # but keywords work reasonably well too.
-        query_emb = self.model.encode(query)
+        # Qwen-instruct models perform better with a prompt for the query
+        # Format: "Instruct: <task>\nQuery: <query>"
+        prompted_query = f"Instruct: Retrieve relevant academic professors and research opportunities based on the student's interest.\nQuery: {query}"
+        
+        query_emb = self.model.encode(prompted_query)
         
         scored_candidates = []
         for cand in candidates:
@@ -78,10 +81,11 @@ matcher = ResearchMatcher()
 
 if __name__ == "__main__":
     # Test
-    query = "Large Language Models"
+    query = "大语言模型 (Large Language Models)" # Test multilingual capability
     candidates = [
         {"name": "Prof. Smith", "interests": "Natural Language Processing, BERT, Transformers"}, # Should match high
         {"name": "Prof. Doe", "interests": "Computer Vision, Image Segmentation"}, # Should match low
+        {"name": "李教授", "interests": "人工智能, 深度学习, 对话系统"}, # Should match high (Chinese)
     ]
     ranked = matcher.rank_candidates(query, candidates)
     for r in ranked:

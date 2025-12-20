@@ -1,14 +1,15 @@
-from fastapi import FastAPI, Request, Query
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, Query, Body
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import uvicorn
-from typing import Optional
+from typing import Optional, Dict
 from app.scrapers import AcademicScraper
 from app.matching import matcher # AI Matcher
 from app.agents import ResearchAgent # Analysis Agent
 from sqlite_utils import Database
 import os
+import datetime
 
 app = FastAPI(title="Academic Match System")
 
@@ -81,7 +82,7 @@ async def search(request: Request, q: Optional[str] = Query(None)):
         # 3. AI Semantic Ranking & Agent Reasoning
         # Re-rank all results based on embedding similarity to the query
         if results:
-            # Step A: Semantic Rank (SPECTER)
+            # Step A: Semantic Rank (Qwen)
             results = matcher.rank_candidates(query, results)
             
             # Step B: Agent Analysis (Why match?)
@@ -111,6 +112,32 @@ async def search(request: Request, q: Optional[str] = Query(None)):
         "results": results,
         "query": query
     })
+
+@app.post("/api/generate-draft")
+async def generate_draft(payload: Dict = Body(...)):
+    """
+    API Endpoint for 'Safe' Cold Email Drafting.
+    Does NOT send email. Generates content for user review.
+    """
+    student_name = payload.get("student_name", "Student")
+    student_interest = payload.get("student_interest", "Research")
+    prof_data = payload.get("professor_data", {})
+    
+    draft_content = research_agent.generate_email_draft(
+        student_name, student_interest, prof_data
+    )
+    
+    # Log draft to DB for analytics (but not sending)
+    db = get_db()
+    db["email_drafts"].insert({
+        "student_name": student_name,
+        "professor_name": prof_data.get("name", "Unknown"),
+        "content": draft_content,
+        "status": "generated",
+        "created_at": datetime.datetime.now().isoformat()
+    })
+    
+    return JSONResponse({"draft": draft_content})
 
 if __name__ == "__main__":
     # Ensure DB exists

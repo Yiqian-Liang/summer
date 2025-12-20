@@ -64,6 +64,18 @@ def init_db():
             db["programs"].add_column("agent_analysis", str)
             logger.info("Added 'agent_analysis' column to programs.")
 
+    # 3. Email Drafts (New Table)
+    if "email_drafts" not in db.table_names():
+        db["email_drafts"].create({
+            "id": int,
+            "student_name": str,
+            "professor_name": str,
+            "content": str,
+            "status": str, # 'draft', 'sent'
+            "created_at": str
+        }, pk="id")
+        logger.info("Created 'email_drafts' table.")
+
     # Seed with some initial data if empty
     if db["programs"].count == 0:
         db["programs"].insert_all([
