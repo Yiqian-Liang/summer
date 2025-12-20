@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-8">
+    <h2 class="text-2xl font-bold text-gray-900">Search Results for "{{ query }}"</h2>
+    <p class="text-gray-500">{{ results|length }} potential matches found</p>
+</div>
+
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    {% for result in results %}
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200 hover:border-indigo-300 transition">
+        <div class="px-4 py-5 sm:px-6 flex justify-between items-start">
+            <div>
+                <h3 class="text-lg leading-6 font-medium text-gray-900">
+                    <a href="#" class="hover:text-indigo-600">{{ result.name }}</a>
+                </h3>
+                <p class="mt-1 max-w-2xl text-sm text-gray-500">{{ result.university }}</p>
+            </div>
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                Match: {{ result.match_score }}%
+            </span>
+        </div>
+        <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
+            <dl class="grid grid-cols-1 gap-x-4 gap-y-8 sm:grid-cols-2">
+                <div class="sm:col-span-1">
+                    <dt class="text-sm font-medium text-gray-500">Department</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ result.department }}</dd>
+                </div>
+                <div class="sm:col-span-1">
+                    <dt class="text-sm font-medium text-gray-500">Research Interests</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ result.interests }}</dd>
+                </div>
+                <div class="sm:col-span-2">
+                    <dt class="text-sm font-medium text-gray-500">Recent Paper</dt>
+                    <dd class="mt-1 text-sm text-gray-900 italic">"{{ result.recent_paper }}"</dd>
+                </div>
+            </dl>
+        </div>
+        <div class="bg-gray-50 px-4 py-4 sm:px-6 flex justify-end space-x-3">
+            <button class="text-sm text-indigo-600 hover:text-indigo-900 font-medium">View Profile</button>
+            <button class="text-sm text-gray-600 hover:text-gray-900 font-medium">Generate Email</button>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-span-2 text-center py-12 text-gray-500">
+        No results found. Try adjusting your search terms.
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

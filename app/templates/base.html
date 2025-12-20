@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Academic Match{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-50 flex flex-col min-h-screen">
+    <nav class="bg-indigo-600 text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center">
+                    <a href="/" class="flex-shrink-0 font-bold text-xl">
+                        <i class="fas fa-graduation-cap mr-2"></i>Global Academic Match
+                    </a>
+                    <div class="hidden md:block">
+                        <div class="ml-10 flex items-baseline space-x-4">
+                            <a href="/" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">Home</a>
+                            <a href="/search" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">Search Programs</a>
+                            <a href="#" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">Community</a>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <a href="#" class="bg-indigo-700 hover:bg-indigo-800 px-4 py-2 rounded-md text-sm font-medium">Login / Sign Up</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="bg-gray-800 text-gray-300 py-6">
+        <div class="max-w-7xl mx-auto px-4 text-center">
+            <p>&copy; 2025 Global Academic Recruitment & Research Match System. All rights reserved.</p>
+            <p class="text-sm mt-2 text-gray-400">Powered by AI & Open Data</p>
+        </div>
+    </footer>
+</body>
+</html>
