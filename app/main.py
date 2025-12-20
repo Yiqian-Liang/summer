@@ -132,6 +132,7 @@ async def generate_draft(payload: Dict = Body(...)):
     db["email_drafts"].insert({
         "student_name": student_name,
         "professor_name": prof_data.get("name", "Unknown"),
+        "professor_email": prof_data.get("email", ""),
         "content": draft_content,
         "status": "generated",
         "created_at": datetime.datetime.now().isoformat()

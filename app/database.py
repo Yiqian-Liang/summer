@@ -70,11 +70,16 @@ def init_db():
             "id": int,
             "student_name": str,
             "professor_name": str,
+            "professor_email": str,
             "content": str,
             "status": str, # 'draft', 'sent'
             "created_at": str
         }, pk="id")
         logger.info("Created 'email_drafts' table.")
+    else:
+        if "professor_email" not in db["email_drafts"].columns_dict:
+            db["email_drafts"].add_column("professor_email", str)
+            logger.info("Added 'professor_email' column to email_drafts.")
 
     # Seed with some initial data if empty
     if db["programs"].count == 0:
