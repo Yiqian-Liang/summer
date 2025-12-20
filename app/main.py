@@ -5,6 +5,7 @@ from fastapi.templating import Jinja2Templates
 import uvicorn
 from typing import Optional
 from app.scrapers import AcademicScraper
+from app.matching import matcher # AI Matcher
 from sqlite_utils import Database
 import os
 
@@ -48,8 +49,9 @@ async def search(request: Request, q: Optional[str] = Query(None)):
                     "department": prog["location"], # Mapping for UI
                     "interests": prog["tags"],
                     "recent_paper": prog["url"], # Mapping URL to paper link slot
-                    "match_score": 90,
-                    "source": prog["source"]
+                    "match_score": 0, # Placeholder, will be AI ranked
+                    "source": prog["source"],
+                    "text_for_matching": f"{prog['title']} {prog['tags']} {prog['description']}"
                 })
         except Exception as e:
             print(f"DB Search Error: {e}")
@@ -67,11 +69,17 @@ async def search(request: Request, q: Optional[str] = Query(None)):
                     "department": "External Match",
                     "interests": str(item.get('interests', 'Relevance Match')),
                     "recent_paper": item.get('recent_paper', item.get('url', '#')),
-                    "match_score": 75,
-                    "source": "External"
+                    "match_score": 0, # Placeholder
+                    "source": item.get('source', 'External'),
+                    "text_for_matching": f"{item.get('name', '')} {item.get('interests', '')} {item.get('snippet', '')}"
                 })
         except Exception as e:
             print(f"Scraper Error: {e}")
+
+        # 3. AI Semantic Ranking
+        # Re-rank all results based on embedding similarity to the query
+        if results:
+            results = matcher.rank_candidates(query, results)
             
     else:
         # Show all local programs if no query

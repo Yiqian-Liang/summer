@@ -118,18 +118,26 @@ class SerpApiScraper(BaseScraper):
             logger.error(f"SerpApi Error: {e}")
             return self._mock_scholar_data(query)
 
-    def search_social_media(self, query: str) -> List[Dict]:
+    def search_social_media(self, query: str, platform: str = "rednote") -> List[Dict]:
         """
-        Uses Google Search to find Xiaohongshu/WeChat posts indexed by Google.
-        Query format: site:xiaohongshu.com "query"
+        Uses Google Search to find posts indexed by Google.
+        Supports: rednote (xiaohongshu), linkedin, instagram
         """
         if not self.api_key or not GoogleSearch:
-            return self._mock_social_data(query)
+            return self._mock_social_data(query, platform)
 
+        site_map = {
+            "rednote": "site:xiaohongshu.com",
+            "linkedin": 'site:linkedin.com/in OR site:linkedin.com/jobs "PhD student" OR "Professor"',
+            "instagram": 'site:instagram.com "lab" OR "research group"'
+        }
+        
+        site_operator = site_map.get(platform, "site:xiaohongshu.com")
+        
         try:
             params = {
                 "engine": "google",
-                "q": f'site:xiaohongshu.com "{query}" summer research',
+                "q": f'{site_operator} "{query}"',
                 "api_key": self.api_key
             }
             search = GoogleSearch(params)
@@ -138,34 +146,40 @@ class SerpApiScraper(BaseScraper):
             organic_results = results.get("organic_results", [])
             return [{
                 "title": item.get("title"),
-                "author": item.get("source", "Rednote User"),
+                "author": item.get("source", f"{platform.title()} User"),
                 "url": item.get("link"),
-                "source": "Rednote (via Google)",
+                "source": f"{platform.title()} (via Google)",
                 "snippet": item.get("snippet")
             } for item in organic_results]
         except Exception as e:
-            logger.error(f"SerpApi Social Search Error: {e}")
-            return self._mock_social_data(query)
+            logger.error(f"SerpApi Social Search Error ({platform}): {e}")
+            return self._mock_social_data(query, platform)
 
-    def _mock_scholar_data(self, query):
-        return [{
-            "name": f"Scholar matching '{query}'",
-            "university": "Mock University",
-            "department": "Computer Science",
-            "interests": f"Deep Learning, {query}",
-            "recent_paper": "https://scholar.google.com",
-            "source": "Google Scholar (Mock)",
-            "match_score": 70
-        }]
-
-    def _mock_social_data(self, query):
-        return [{
-            "title": f"Summer Research 2025 at MIT ({query})",
-            "author": "StudyAbroad_Helper",
-            "url": "https://www.xiaohongshu.com/discovery/item/...",
-            "source": "Rednote (Mock)",
-            "snippet": "Detailed guide on applying to MIT SGI..."
-        }]
+    def _mock_social_data(self, query, platform="rednote"):
+        if platform == "linkedin":
+            return [{
+                "title": f"PhD Student in {query} at Stanford",
+                "author": "Jane Doe",
+                "url": "https://www.linkedin.com/in/janedoe",
+                "source": "LinkedIn (Mock)",
+                "snippet": f"Researching {query} and Agents..."
+            }]
+        elif platform == "instagram":
+             return [{
+                "title": f"{query} Lab Group Photo",
+                "author": "mit_csail",
+                "url": "https://www.instagram.com/p/...",
+                "source": "Instagram (Mock)",
+                "snippet": "Our team presenting at CVPR..."
+            }]
+        else:
+            return [{
+                "title": f"Summer Research 2025 at MIT ({query})",
+                "author": "StudyAbroad_Helper",
+                "url": "https://www.xiaohongshu.com/discovery/item/...",
+                "source": "Rednote (Mock)",
+                "snippet": "Detailed guide on applying to MIT SGI..."
+            }]
 
 class AcademicScraper:
     """Facade to coordinate multiple scrapers."""
@@ -177,14 +191,15 @@ class AcademicScraper:
         results = []
         
         # 1. Official NSF REU (Cached/Scraped)
-        # Note: In production, this should run periodically, not per request
         # results.extend(self.nsf_scraper.scrape_listings()) 
         
         # 2. Search Scholar
         results.extend(self.serp_scraper.search_scholar(query))
         
-        # 3. Search Social Media
-        results.extend(self.serp_scraper.search_social_media(query))
+        # 3. Search Global Social Media
+        results.extend(self.serp_scraper.search_social_media(query, "rednote"))
+        results.extend(self.serp_scraper.search_social_media(query, "linkedin"))
+        results.extend(self.serp_scraper.search_social_media(query, "instagram"))
         
         return results
 

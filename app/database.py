@@ -22,9 +22,15 @@ def init_db():
             "email": str,
             "website": str,
             "source": str, # 'university', 'scholar', 'manual'
-            "last_updated": str
+            "last_updated": str,
+            "embedding": str # JSON string of vector
         }, pk="id")
         logger.info("Created 'professors' table.")
+    else:
+        # Migration: Add embedding column if not exists
+        if "embedding" not in db["professors"].columns_dict:
+            db["professors"].add_column("embedding", str)
+            logger.info("Added 'embedding' column to professors.")
 
     # 2. Programs (Summer Research/PhD Positions) Table
     if "programs" not in db.table_names():
@@ -38,11 +44,17 @@ def init_db():
             "stipend": str,
             "url": str,
             "source": str, # 'nsf_reu', 'mit_sgi', 'social_media'
-            "tags": str # JSON string or comma-separated
+            "tags": str, # JSON string or comma-separated
+            "embedding": str # JSON string of vector
         }, pk="id")
         # Enable full-text search on title and description
         db["programs"].enable_fts(["title", "description", "tags"])
         logger.info("Created 'programs' table with FTS.")
+    else:
+        # Migration: Add embedding column if not exists
+        if "embedding" not in db["programs"].columns_dict:
+            db["programs"].add_column("embedding", str)
+            logger.info("Added 'embedding' column to programs.")
 
     # Seed with some initial data if empty
     if db["programs"].count == 0:
