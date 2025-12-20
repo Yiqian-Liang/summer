@@ -95,7 +95,6 @@ class ResearchAgent:
         
         header = f"To: {prof_email}\n"
         subject_line = f"Subject: Inquiry from {student_name}: Research on {interests}"
-        
         body = f"""
 Dear {prof_name},
 
