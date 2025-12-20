@@ -23,14 +23,18 @@ def init_db():
             "website": str,
             "source": str, # 'university', 'scholar', 'manual'
             "last_updated": str,
-            "embedding": str # JSON string of vector
+            "embedding": str, # JSON string of vector
+            "agent_analysis": str # AI generated reason for match
         }, pk="id")
         logger.info("Created 'professors' table.")
     else:
-        # Migration: Add embedding column if not exists
+        # Migration: Add columns if not exists
         if "embedding" not in db["professors"].columns_dict:
             db["professors"].add_column("embedding", str)
             logger.info("Added 'embedding' column to professors.")
+        if "agent_analysis" not in db["professors"].columns_dict:
+            db["professors"].add_column("agent_analysis", str)
+            logger.info("Added 'agent_analysis' column to professors.")
 
     # 2. Programs (Summer Research/PhD Positions) Table
     if "programs" not in db.table_names():
@@ -45,16 +49,20 @@ def init_db():
             "url": str,
             "source": str, # 'nsf_reu', 'mit_sgi', 'social_media'
             "tags": str, # JSON string or comma-separated
-            "embedding": str # JSON string of vector
+            "embedding": str, # JSON string of vector
+            "agent_analysis": str # AI generated reason for match
         }, pk="id")
         # Enable full-text search on title and description
         db["programs"].enable_fts(["title", "description", "tags"])
         logger.info("Created 'programs' table with FTS.")
     else:
-        # Migration: Add embedding column if not exists
+        # Migration: Add columns if not exists
         if "embedding" not in db["programs"].columns_dict:
             db["programs"].add_column("embedding", str)
             logger.info("Added 'embedding' column to programs.")
+        if "agent_analysis" not in db["programs"].columns_dict:
+            db["programs"].add_column("agent_analysis", str)
+            logger.info("Added 'agent_analysis' column to programs.")
 
     # Seed with some initial data if empty
     if db["programs"].count == 0:

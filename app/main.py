@@ -6,6 +6,7 @@ import uvicorn
 from typing import Optional
 from app.scrapers import AcademicScraper
 from app.matching import matcher # AI Matcher
+from app.agents import ResearchAgent # Analysis Agent
 from sqlite_utils import Database
 import os
 
@@ -17,8 +18,9 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # Templates
 templates = Jinja2Templates(directory="app/templates")
 
-# Initialize Scraper Facade
+# Initialize Scraper Facade & Agents
 scraper_engine = AcademicScraper()
+research_agent = ResearchAgent()
 
 # Database Connection
 DB_NAME = "summer.db"
@@ -76,10 +78,18 @@ async def search(request: Request, q: Optional[str] = Query(None)):
         except Exception as e:
             print(f"Scraper Error: {e}")
 
-        # 3. AI Semantic Ranking
+        # 3. AI Semantic Ranking & Agent Reasoning
         # Re-rank all results based on embedding similarity to the query
         if results:
+            # Step A: Semantic Rank (SPECTER)
             results = matcher.rank_candidates(query, results)
+            
+            # Step B: Agent Analysis (Why match?)
+            # Only analyze top 3 results to save time/tokens
+            for i in range(min(3, len(results))):
+                analysis = research_agent.analyze_match(query, results[i])
+                results[i]['agent_analysis'] = analysis['reasoning']
+                results[i]['agent_verdict'] = analysis['verdict']
             
     else:
         # Show all local programs if no query
