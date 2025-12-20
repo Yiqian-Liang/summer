@@ -121,7 +121,7 @@ class SerpApiScraper(BaseScraper):
     def search_social_media(self, query: str, platform: str = "rednote") -> List[Dict]:
         """
         Uses Google Search to find posts indexed by Google.
-        Supports: rednote, linkedin, instagram, wechat, twitter, zhihu, bilibili, tiktok, facebook
+        Supports: rednote, linkedin, instagram, wechat, twitter, zhihu, bilibili, tiktok, facebook, discord
         """
         if not self.api_key or not GoogleSearch:
             return self._mock_social_data(query, platform)
@@ -135,7 +135,8 @@ class SerpApiScraper(BaseScraper):
             "zhihu": 'site:zhihu.com "暑研" OR "导师评价"',
             "bilibili": 'site:bilibili.com "暑研" OR "科研"',
             "tiktok": 'site:tiktok.com "research" OR "phd life"',
-            "facebook": 'site:facebook.com "research group" OR "lab"'
+            "facebook": 'site:facebook.com "research group" OR "lab"',
+            "discord": 'site:discord.com "invite" "research" OR "study group"'
         }
         
         site_operator = site_map.get(platform, "site:xiaohongshu.com")
@@ -194,6 +195,14 @@ class SerpApiScraper(BaseScraper):
                 "source": "Twitter (Mock)",
                 "snippet": "My lab is looking for 2 PhD students..."
             }]
+        elif platform == "discord":
+             return [{
+                "title": f"{query} Research Community Invite",
+                "author": "Discord",
+                "url": "https://discord.com/invite/...",
+                "source": "Discord (Mock)",
+                "snippet": "Join our server to discuss recent papers in..."
+            }]
         else:
             return [{
                 "title": f"Summer Research 2025 at MIT ({query})",
@@ -219,7 +228,7 @@ class AcademicScraper:
         results.extend(self.serp_scraper.search_scholar(query))
         
         # 3. Search Global Social Media
-        platforms = ["rednote", "linkedin", "instagram", "wechat", "twitter", "zhihu", "bilibili"]
+        platforms = ["rednote", "linkedin", "instagram", "wechat", "twitter", "zhihu", "bilibili", "discord"]
         for p in platforms:
              results.extend(self.serp_scraper.search_social_media(query, p))
         
