@@ -8,19 +8,29 @@
 
 <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
     {% for result in results %}
-    <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200 hover:border-indigo-300 transition">
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200 hover:border-indigo-300 transition flex flex-col h-full">
         <div class="px-4 py-5 sm:px-6 flex justify-between items-start">
             <div>
                 <h3 class="text-lg leading-6 font-medium text-gray-900">
-                    <a href="#" class="hover:text-indigo-600">{{ result.name }}</a>
+                    <a href="{{ result.recent_paper }}" target="_blank" class="hover:text-indigo-600">{{ result.name }}</a>
                 </h3>
                 <p class="mt-1 max-w-2xl text-sm text-gray-500">{{ result.university }}</p>
             </div>
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
+                {% if result.match_score > 80 %} bg-green-100 text-green-800 {% elif result.match_score > 50 %} bg-yellow-100 text-yellow-800 {% else %} bg-gray-100 text-gray-800 {% endif %}">
                 Match: {{ result.match_score }}%
             </span>
         </div>
-        <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
+        
+        <div class="border-t border-gray-200 px-4 py-5 sm:px-6 flex-grow">
+            <!-- AI Agent Analysis Box -->
+            {% if result.agent_analysis %}
+            <div class="mb-4 bg-indigo-50 border-l-4 border-indigo-500 p-3 text-sm text-indigo-700">
+                <p class="font-bold mb-1">🤖 Agent Analysis:</p>
+                <p>{{ result.agent_analysis }}</p>
+            </div>
+            {% endif %}
+
             <dl class="grid grid-cols-1 gap-x-4 gap-y-8 sm:grid-cols-2">
                 <div class="sm:col-span-1">
                     <dt class="text-sm font-medium text-gray-500">Department</dt>
@@ -31,14 +41,30 @@
                     <dd class="mt-1 text-sm text-gray-900">{{ result.interests }}</dd>
                 </div>
                 <div class="sm:col-span-2">
-                    <dt class="text-sm font-medium text-gray-500">Recent Paper</dt>
-                    <dd class="mt-1 text-sm text-gray-900 italic">"{{ result.recent_paper }}"</dd>
+                    <dt class="text-sm font-medium text-gray-500">Source / Recent Paper</dt>
+                    <dd class="mt-1 text-sm text-gray-900 italic truncate">
+                        <a href="{{ result.recent_paper }}" target="_blank" class="text-indigo-600 hover:underline">
+                            {{ result.recent_paper }}
+                        </a>
+                    </dd>
                 </div>
             </dl>
         </div>
-        <div class="bg-gray-50 px-4 py-4 sm:px-6 flex justify-end space-x-3">
-            <button class="text-sm text-indigo-600 hover:text-indigo-900 font-medium">View Profile</button>
-            <button class="text-sm text-gray-600 hover:text-gray-900 font-medium">Generate Email</button>
+        
+        <div class="bg-gray-50 px-4 py-4 sm:px-6 flex justify-end space-x-3 mt-auto">
+            <button onclick="openPreview('{{ result.recent_paper }}', '{{ result.name|escape }}')" class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none">
+                👁️ Quick Preview
+            </button>
+            
+            {% if result.has_direct_apply %}
+            <a href="{{ result.direct_apply_link }}" target="_blank" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded text-white bg-green-600 hover:bg-green-700 shadow-sm focus:outline-none">
+                📝 Apply Directly
+            </a>
+            {% else %}
+            <button onclick="generateDraft('{{ result.name|escape }}', '{{ result.interests|escape }}', '{{ query|escape }}')" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm focus:outline-none">
+                ✉️ Generate Email
+            </button>
+            {% endif %}
         </div>
     </div>
     {% else %}
@@ -47,4 +73,85 @@
     </div>
     {% endfor %}
 </div>
+
+<!-- Preview Modal -->
+<div id="previewModal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <!-- Background overlay -->
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onclick="closePreview()"></div>
+
+        <!-- Modal panel -->
+        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-6xl sm:w-full h-[85vh] flex flex-col">
+            <div class="bg-gray-50 px-4 py-3 sm:px-6 flex justify-between items-center border-b">
+                <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+                    Website Preview: <span id="previewTitle"></span>
+                </h3>
+                <div class="flex space-x-2">
+                    <a id="previewExternalLink" href="#" target="_blank" class="text-sm text-indigo-600 hover:text-indigo-900 font-medium">
+                        Open in New Tab ↗
+                    </a>
+                    <button type="button" class="text-gray-400 hover:text-gray-500" onclick="closePreview()">
+                        <span class="sr-only">Close</span>
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="flex-grow bg-gray-100 relative">
+                <div id="iframeLoader" class="absolute inset-0 flex items-center justify-center text-gray-500">
+                    <p>Loading preview...</p>
+                </div>
+                <iframe id="previewIframe" src="" class="w-full h-full border-0" onload="document.getElementById('iframeLoader').style.display='none'"></iframe>
+                
+                <!-- Fallback Message (Hidden by default, simplistic implementation) -->
+                <div id="iframeError" class="hidden absolute inset-0 flex flex-col items-center justify-center bg-white p-8 text-center">
+                    <p class="text-gray-500 mb-4">This website does not allow embedding (Security Headers).</p>
+                    <a id="fallbackLink" href="#" target="_blank" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
+                        Open Website Externally
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Email Draft Modal (Placeholder for logic) -->
+<script>
+function openPreview(url, title) {
+    document.getElementById('previewModal').classList.remove('hidden');
+    document.getElementById('previewTitle').innerText = title;
+    document.getElementById('previewExternalLink').href = url;
+    document.getElementById('fallbackLink').href = url;
+    
+    // Reset iframe
+    const iframe = document.getElementById('previewIframe');
+    iframe.src = url;
+    document.getElementById('iframeLoader').style.display = 'flex';
+    document.getElementById('iframeError').classList.add('hidden');
+}
+
+function closePreview() {
+    document.getElementById('previewModal').classList.add('hidden');
+    document.getElementById('previewIframe').src = '';
+}
+
+async function generateDraft(profName, interests, query) {
+    // Call API
+    alert("Generating draft for " + profName + "... (Check Console for now)");
+    const response = await fetch('/api/generate-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            student_name: "Student", // In real app, get from user profile
+            student_interest: query,
+            professor_data: { name: profName, interests: interests }
+        })
+    });
+    const data = await response.json();
+    console.log(data.draft);
+    // In a real implementation, we would show another modal with the draft text
+    prompt("Copy your email draft:", data.draft);
+}
+</script>
 {% endblock %}
