@@ -5,6 +5,8 @@ from fastapi.templating import Jinja2Templates
 import uvicorn
 from typing import Optional
 from app.scrapers import AcademicScraper
+from sqlite_utils import Database
+import os
 
 app = FastAPI(title="Academic Match System")
 
@@ -17,39 +19,10 @@ templates = Jinja2Templates(directory="app/templates")
 # Initialize Scraper Facade
 scraper_engine = AcademicScraper()
 
-# Mock Data (In real app, this comes from DB/Scraper)
-MOCK_PROFESSORS = [
-    {
-        "id": 1,
-        "name": "Dr. Alice Smith",
-        "university": "Stanford University",
-        "department": "Computer Science",
-        "interests": "NLP, Deep Learning, Agents",
-        "recent_paper": "Large Language Models for Reasoning",
-        "match_score": 95,
-        "source": "University Website"
-    },
-    {
-        "id": 2,
-        "name": "Prof. Bob Johnson",
-        "university": "MIT",
-        "department": "EECS",
-        "interests": "Robotics, Computer Vision",
-        "recent_paper": "Visual Navigation in Unstructured Environments",
-        "match_score": 88,
-        "source": "University Website"
-    },
-    {
-        "id": 3,
-        "name": "Dr. Carol Williams",
-        "university": "UC Berkeley",
-        "department": "AI Lab",
-        "interests": "Reinforcement Learning, Control Theory",
-        "recent_paper": "Efficient RL with Human Feedback",
-        "match_score": 92,
-        "source": "University Website"
-    }
-]
+# Database Connection
+DB_NAME = "summer.db"
+def get_db():
+    return Database(DB_NAME)
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
@@ -61,30 +34,59 @@ async def search(request: Request, q: Optional[str] = Query(None)):
     results = []
     
     if query:
-        # 1. Search Local Mock DB
-        for prof in MOCK_PROFESSORS:
-            if (query.lower() in prof['interests'].lower() or 
-                query.lower() in prof['name'].lower() or 
-                query.lower() in prof['university'].lower()):
-                results.append(prof)
+        # 1. Search Local Database (Programs & Professors)
+        db = get_db()
         
+        # Search Programs Table (Full Text Search)
+        try:
+            program_matches = db["programs"].search(query)
+            for prog in program_matches:
+                results.append({
+                    "id": prog["id"],
+                    "name": prog["title"],
+                    "university": prog["institution"],
+                    "department": prog["location"], # Mapping for UI
+                    "interests": prog["tags"],
+                    "recent_paper": prog["url"], # Mapping URL to paper link slot
+                    "match_score": 90,
+                    "source": prog["source"]
+                })
+        except Exception as e:
+            print(f"DB Search Error: {e}")
+
         # 2. Live Fetch from External Sources (Scholar/Social)
-        # This demonstrates the "All Platforms" capability
-        live_results = scraper_engine.search_all_sources(query)
-        for item in live_results:
-            # Normalize to match frontend template
-            results.append({
-                "id": len(results) + 1,
-                "name": item.get('name', item.get('title', 'Unknown')),
-                "university": item.get('source', 'External Source'),
-                "department": "External Match",
-                "interests": ", ".join(item.get('interests', ['Relevance Match'])),
-                "recent_paper": item.get('url', 'Link Available'),
-                "match_score": 75 # Default for external
-            })
+        # In a real production app, this should be a background task that populates the DB
+        # For this demo, we fetch live and merge.
+        try:
+            live_results = scraper_engine.search_all_sources(query)
+            for item in live_results:
+                results.append({
+                    "id": len(results) + 1,
+                    "name": item.get('name', item.get('title', 'Unknown')),
+                    "university": item.get('source', 'External Source'),
+                    "department": "External Match",
+                    "interests": str(item.get('interests', 'Relevance Match')),
+                    "recent_paper": item.get('recent_paper', item.get('url', '#')),
+                    "match_score": 75,
+                    "source": "External"
+                })
+        except Exception as e:
+            print(f"Scraper Error: {e}")
             
     else:
-        results = MOCK_PROFESSORS # Show all if no query
+        # Show all local programs if no query
+        db = get_db()
+        for prog in db["programs"].rows:
+             results.append({
+                "id": prog["id"],
+                "name": prog["title"],
+                "university": prog["institution"],
+                "department": prog["location"],
+                "interests": prog["tags"],
+                "recent_paper": prog["url"],
+                "match_score": 0,
+                "source": prog["source"]
+            })
 
     return templates.TemplateResponse("search_results.html", {
         "request": request,
@@ -93,4 +95,9 @@ async def search(request: Request, q: Optional[str] = Query(None)):
     })
 
 if __name__ == "__main__":
+    # Ensure DB exists
+    if not os.path.exists(DB_NAME):
+        from app.database import init_db
+        init_db()
+        
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
