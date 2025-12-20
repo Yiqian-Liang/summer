@@ -121,7 +121,7 @@ class SerpApiScraper(BaseScraper):
     def search_social_media(self, query: str, platform: str = "rednote") -> List[Dict]:
         """
         Uses Google Search to find posts indexed by Google.
-        Supports: rednote (xiaohongshu), linkedin, instagram
+        Supports: rednote (xiaohongshu), linkedin, instagram, wechat
         """
         if not self.api_key or not GoogleSearch:
             return self._mock_social_data(query, platform)
@@ -129,7 +129,8 @@ class SerpApiScraper(BaseScraper):
         site_map = {
             "rednote": "site:xiaohongshu.com",
             "linkedin": 'site:linkedin.com/in OR site:linkedin.com/jobs "PhD student" OR "Professor"',
-            "instagram": 'site:instagram.com "lab" OR "research group"'
+            "instagram": 'site:instagram.com "lab" OR "research group"',
+            "wechat": 'site:mp.weixin.qq.com "暑研" OR "summer research"'
         }
         
         site_operator = site_map.get(platform, "site:xiaohongshu.com")
@@ -172,6 +173,14 @@ class SerpApiScraper(BaseScraper):
                 "source": "Instagram (Mock)",
                 "snippet": "Our team presenting at CVPR..."
             }]
+        elif platform == "wechat":
+             return [{
+                "title": f"CS Top 50 Summer Research Opportunities ({query})",
+                "author": "CS_Go_Abroad",
+                "url": "https://mp.weixin.qq.com/s/...",
+                "source": "WeChat Official Account (Mock)",
+                "snippet": f"Summary of {query} labs hiring interns..."
+            }]
         else:
             return [{
                 "title": f"Summer Research 2025 at MIT ({query})",
@@ -200,6 +209,7 @@ class AcademicScraper:
         results.extend(self.serp_scraper.search_social_media(query, "rednote"))
         results.extend(self.serp_scraper.search_social_media(query, "linkedin"))
         results.extend(self.serp_scraper.search_social_media(query, "instagram"))
+        results.extend(self.serp_scraper.search_social_media(query, "wechat"))
         
         return results
 
