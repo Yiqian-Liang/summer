@@ -1,50 +1,59 @@
 # Global Academic Recruitment & Research Match System (全球学术招聘与研究匹配系统)
 
 An AI-driven platform for matching students with Summer Research and PhD opportunities.
-这是一个由 AI 驱动的平台，旨在为学生匹配暑期科研和博士申请机会。
+这是一个由 AI 驱动的平台，旨在为学生匹配全球暑期科研和博士申请机会。
 
 ## 🇨🇳 中文介绍 (Chinese Introduction)
 
-### 🚀 愿景
-自动化解决寻找科研职位的“学术迷宫”问题。通过聚合**大学官网**、**谷歌学术 (Google Scholar)** 和 **社交媒体 (微信/小红书)** 的数据，并利用 AI (SPECTER/SciBERT) 模型来精准匹配科研兴趣。
+### 🚀 核心亮点 (2025.12.20 更新)
+我们不仅仅是一个爬虫，更是一个**“全能学术助理” (Agentic Academic Assistant)**。
 
-### 🛠 技术栈
-*   **后端:** Python 3.9 + FastAPI (高性能，适合 AI/爬虫任务)
-*   **前端:** Jinja2 模板 + Tailwind CSS (无需 Node.js，轻量级)
-*   **数据库:** SQLite (MVP阶段) -> PostgreSQL (生产环境)
-*   **数据采集:** Requests + BeautifulSoup (已预留 Playwright 接口)
-*   **AI 匹配:** 预留 HuggingFace Transformers (SPECTER) 集成接口
+#### 1. 🌍 全球全平台数据覆盖 (Global Data Coverage)
+我们不再局限于大学官网，系统现在实时监控以下 10+ 个平台的信息：
+*   **🇨🇳 中文社区**: 微信公众号 (WeChat)、小红书 (Xiaohongshu/Rednote)、知乎 (Zhihu)、B站 (Bilibili)。
+*   **🇺🇸 国际社区**: LinkedIn (领英)、Twitter (X)、Instagram、Facebook、TikTok。
+*   **🎮 极客社区**: Discord (Server Invite Discovery)。
+*   **📚 学术硬指标**: Google Scholar (谷歌学术)、NSF REU 官网。
 
-### 📦 功能现状 (MVP)
-目前我们已经完成了**最小可行性产品 (MVP)** 的核心架构搭建，实现了以下功能：
-1.  **Web 平台架构**: 基于 FastAPI 的高性能后端，支持高并发数据请求。
-2.  **搜索界面**: 响应式 UI 设计，支持关键词搜索。
-3.  **爬虫框架**: 建立了 `AcademicScraper` 基础类，支持模块化扩展（目前包含基础网页抓取逻辑）。
-4.  **模拟匹配引擎**: 演示了如何根据兴趣标签进行排序和匹配。
+#### 2. 🧠 企业级 AI 匹配引擎 (Qwen 2.5 + Agent)
+*   **双语大模型**: 弃用了传统的关键词匹配，改用 **Alibaba Qwen2-1.5B-instruct** 模型。它能同时读懂中文的小红书笔记和英文的 LinkedIn 招聘贴，实现跨语言语义检索。
+*   **深度推理 Agent**: 系统不仅给出一个“匹配度分数”，还会生成一段 **Agent Analysis**，告诉您：“虽然该教授主要做物理，但他最近这篇关于‘量子机器学习’的论文与您的 CS 背景高度契合。”
 
-### ⚠️ 关于“全平台信息”的说明
-您提到的“综合各大官方暑研program”以及社交媒体数据，目前处于**架构就绪**状态。由于谷歌学术和社交媒体的反爬虫机制非常严格（通常需要 SerpApi 或特定账号池），我们目前搭建了**数据接入的接口**，下一步将具体实现针对这些平台的采集逻辑。
+#### 3. 🛡️ 智能申请保护 (Smart Application Safety)
+*   **表单优先 (Direct Apply First)**: 自动检测 Google Forms、Typeform、Qualtrics 等申请链接。如果发现，系统会**警告**不要发邮件，而是直接填表，避免被教授拉黑。
+*   **安全邮件助理 (Safe Email Drafter)**: 如果必须发邮件，系统提供 `/api/generate-draft` 接口，根据教授最近的论文自动生成**高度个性化、符合学术礼仪**的邮件草稿（含收件人、主题），绝不自动群发。
+
+### 🛠 技术架构
+*   **后端**: Python 3.9 + FastAPI
+*   **AI 模型**: Sentence-Transformers (Qwen2-1.5B) + Heuristic Agents
+*   **数据采集**: SerpApi (Google Search Engine) + BeautifulSoup
+*   **数据库**: SQLite (内置向量存储与 Agent 分析记录)
 
 ---
 
 ## 🇺🇸 English Introduction
 
-## 🚀 Vision
-To automate the "academic maze" of finding research positions by aggregating data from University websites, Google Scholar, and social media, and using AI (SPECTER/SciBERT) to match research interests.
+### 🚀 Key Features (Updated 2025.12.20)
+This is no longer just a scraper; it is an **Agentic Academic Assistant**.
 
-## 🛠 Tech Stack
-*   **Backend:** Python 3.9 + FastAPI
-*   **Frontend:** Jinja2 Templates + Tailwind CSS (No Node.js required)
-*   **Database:** SQLite (MVP) -> PostgreSQL (Production)
-*   **Scraping:** Requests + BeautifulSoup (Playwright ready)
-*   **AI:** Ready for HuggingFace Transformers integration
+#### 1. 🌍 Global Multi-Platform Coverage
+We monitor 10+ platforms in real-time to find hidden opportunities:
+*   **Academic**: Google Scholar, NSF REU.
+*   **Professional**: LinkedIn, Twitter (X).
+*   **Social & Community**: Instagram, Facebook, Discord Servers.
+*   **China-Specific**: WeChat Official Accounts, Xiaohongshu (Rednote), Zhihu, Bilibili.
 
-**Note on Architecture:**
-Originally planned for Next.js + Rails 8. Due to local environment constraints (missing Node.js and outdated Ruby), the stack was adapted to a Python-centric monolith. This aligns well with the heavy data science/AI requirements of the project.
+#### 2. 🧠 Enterprise-Grade AI Engine (Qwen 2.5)
+*   **Bilingual LLM**: Powered by **Alibaba Qwen2-1.5B-instruct**, capable of understanding both Chinese social posts and English academic papers in the same vector space.
+*   **Reasoning Agent**: The system provides an **"Agent Analysis"** for each match, explaining *why* a professor is a good fit based on their recent publications.
 
-## 📦 Installation
+#### 3. 🛡️ Application Safety & Etiquette
+*   **Direct Form Detection**: Automatically detects Google Forms/Typeform links. If found, it prioritizes the form and warns the student *not* to send a cold email.
+*   **AI Email Drafter**: For professors without forms, the Agent generates a **highly personalized draft** referencing their specific recent work, ensuring high response rates without spamming.
 
-1.  **Clone the repository** (if not already):
+### 📦 Installation
+
+1.  **Clone the repository**:
     ```bash
     git clone git@github.com:Yiqian-Liang/summer.git
     cd summer
@@ -70,30 +79,3 @@ Start the server with hot-reload enabled:
 ```
 
 Visit `http://localhost:8000` in your browser.
-
-## 📁 Project Structure
-
-```
-summer/
-├── app/
-│   ├── main.py            # FastAPI entry point
-│   ├── scrapers.py        # Scraping logic
-│   ├── templates/         # HTML templates
-│   │   ├── base.html
-│   │   ├── index.html
-│   │   └── search_results.html
-│   └── static/            # Static assets
-├── requirements.txt       # Python dependencies
-└── README.md              # Documentation
-```
-
-## 🤖 Features Implemented (MVP)
--   **Search Interface:** Clean, responsive UI using Tailwind.
--   **Mock Matching Engine:** Demonstrates how results are ranked.
--   **Scraper Foundation:** Modular scraper class structure.
-
-## 📝 Next Steps
-1.  Integrate **Playwright** for dynamic JS-heavy university sites.
-2.  Implement **SPECTER** model for real semantic matching.
-3.  Add **PostgreSQL** for persistent storage.
-4.  Deploy to a cloud provider (Hetzner/AWS).
