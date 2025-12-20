@@ -7,14 +7,38 @@ import requests
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+import re
+
 class ResearchAgent:
     """
     An 'Analysis Agent' that simulates the reasoning capability of a human researcher.
-    In a full production environment, this would call GPT-4o or Claude 3.5.
-    Here, we simulate the Chain-of-Thought process or use a lightweight local heuristic.
     """
     def __init__(self, api_key: str = None):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+
+    def detect_application_form(self, text: str) -> Optional[str]:
+        """
+        Scans text for Google Forms, Typeform, or Qualtrics links.
+        Returns the first valid form URL found, or None.
+        """
+        if not text:
+            return None
+            
+        # Regex patterns for common form services
+        patterns = [
+            r'https?://docs\.google\.com/forms/d/[\w-]+',
+            r'https?://[\w-]+\.typeform\.com/to/[\w]+',
+            r'https?://[\w-]+\.qualtrics\.com/[\w/-]+',
+            r'https?://airtable\.com/[\w]+',
+            r'https?://wj\.qq\.com/[\w]+' # Tencent Questionnaire
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(0)
+        
+        return None
 
     def analyze_match(self, student_query: str, candidate_profile: Dict) -> Dict:
         """

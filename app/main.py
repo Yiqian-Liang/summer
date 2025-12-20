@@ -85,12 +85,25 @@ async def search(request: Request, q: Optional[str] = Query(None)):
             # Step A: Semantic Rank (Qwen)
             results = matcher.rank_candidates(query, results)
             
-            # Step B: Agent Analysis (Why match?)
+            # Step B: Agent Analysis (Why match? + Form Detection)
             # Only analyze top 3 results to save time/tokens
             for i in range(min(3, len(results))):
+                # 1. Check for Direct Apply Link
+                full_text = results[i].get('text_for_matching', '')
+                form_link = research_agent.detect_application_form(full_text)
+                
+                if form_link:
+                    results[i]['direct_apply_link'] = form_link
+                    results[i]['has_direct_apply'] = True
+                
+                # 2. Analyze Match Reason
                 analysis = research_agent.analyze_match(query, results[i])
                 results[i]['agent_analysis'] = analysis['reasoning']
                 results[i]['agent_verdict'] = analysis['verdict']
+                
+                # 3. Warn if applying via email when form exists
+                if form_link:
+                    results[i]['agent_analysis'] += " ⚠️ Note: This professor likely prefers the direct application form found."
             
     else:
         # Show all local programs if no query
