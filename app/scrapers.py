@@ -121,7 +121,7 @@ class SerpApiScraper(BaseScraper):
     def search_social_media(self, query: str, platform: str = "rednote") -> List[Dict]:
         """
         Uses Google Search to find posts indexed by Google.
-        Supports: rednote (xiaohongshu), linkedin, instagram, wechat
+        Supports: rednote, linkedin, instagram, wechat, twitter, zhihu, bilibili, tiktok, facebook
         """
         if not self.api_key or not GoogleSearch:
             return self._mock_social_data(query, platform)
@@ -130,7 +130,12 @@ class SerpApiScraper(BaseScraper):
             "rednote": "site:xiaohongshu.com",
             "linkedin": 'site:linkedin.com/in OR site:linkedin.com/jobs "PhD student" OR "Professor"',
             "instagram": 'site:instagram.com "lab" OR "research group"',
-            "wechat": 'site:mp.weixin.qq.com "暑研" OR "summer research"'
+            "wechat": 'site:mp.weixin.qq.com "暑研" OR "summer research"',
+            "twitter": 'site:twitter.com OR site:x.com "phd position" OR "looking for students"',
+            "zhihu": 'site:zhihu.com "暑研" OR "导师评价"',
+            "bilibili": 'site:bilibili.com "暑研" OR "科研"',
+            "tiktok": 'site:tiktok.com "research" OR "phd life"',
+            "facebook": 'site:facebook.com "research group" OR "lab"'
         }
         
         site_operator = site_map.get(platform, "site:xiaohongshu.com")
@@ -181,12 +186,20 @@ class SerpApiScraper(BaseScraper):
                 "source": "WeChat Official Account (Mock)",
                 "snippet": f"Summary of {query} labs hiring interns..."
             }]
+        elif platform == "twitter":
+             return [{
+                "title": f"Hiring PhD students in {query}!",
+                "author": "Prof_AI",
+                "url": "https://twitter.com/...",
+                "source": "Twitter (Mock)",
+                "snippet": "My lab is looking for 2 PhD students..."
+            }]
         else:
             return [{
                 "title": f"Summer Research 2025 at MIT ({query})",
                 "author": "StudyAbroad_Helper",
                 "url": "https://www.xiaohongshu.com/discovery/item/...",
-                "source": "Rednote (Mock)",
+                "source": f"{platform.title()} (Mock)",
                 "snippet": "Detailed guide on applying to MIT SGI..."
             }]
 
@@ -206,10 +219,9 @@ class AcademicScraper:
         results.extend(self.serp_scraper.search_scholar(query))
         
         # 3. Search Global Social Media
-        results.extend(self.serp_scraper.search_social_media(query, "rednote"))
-        results.extend(self.serp_scraper.search_social_media(query, "linkedin"))
-        results.extend(self.serp_scraper.search_social_media(query, "instagram"))
-        results.extend(self.serp_scraper.search_social_media(query, "wechat"))
+        platforms = ["rednote", "linkedin", "instagram", "wechat", "twitter", "zhihu", "bilibili"]
+        for p in platforms:
+             results.extend(self.serp_scraper.search_social_media(query, p))
         
         return results
 
