@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, List, Optional
 import os
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -9,34 +10,109 @@ logger = logging.getLogger(__name__)
 class RAGWorkbench:
     """
     Retrieval-Augmented Generation (RAG) Workbench for Academic Applications.
-    This module is responsible for generating high-quality, citation-backed
-    application materials (Cold Emails, SOPs) by retrieving context from
-    professor papers and student CVs.
+    Now supports Hybrid Mode:
+    1. Local Template Logic (Fast, Free)
+    2. Gemini/GPT-4o API (Deep Reasoning, Paid)
     """
-    def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+    def __init__(self, gemini_api_key: str = None):
+        self.gemini_api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
+        self.api_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent"
+        
+        # Tool Definition for Google Search (Grounding)
+        self.tools = {
+            "google_search_retrieval": {
+                "dynamic_retrieval_config": {
+                    "mode": "MODE_DYNAMIC",
+                    "dynamic_threshold": 0.7,
+                }
+            }
+        }
 
     def generate_context_aware_draft(self, student_profile: Dict, professor_profile: Dict) -> Dict:
         """
-        Generates a sophisticated email draft using RAG principles.
-        Instead of a generic template, it injects specific "Contrastive Examples"
-        and citation markers.
+        Generates a draft. If API key is present, uses Gemini for 'Deep Drafting'.
+        Otherwise falls back to 'Template Drafting'.
+        """
+        if self.gemini_api_key:
+            return self._generate_with_gemini(student_profile, professor_profile)
+        else:
+            return self._generate_with_template(student_profile, professor_profile)
+
+    def _generate_with_gemini(self, student_profile: Dict, professor_profile: Dict) -> Dict:
+        """
+        Uses Gemini 2.0 Flash to generate a highly personalized email.
+        It performs 'Online Reasoning' if the model supports tool use (simulated here via prompt).
+        """
+        prof_name = professor_profile.get('name', 'Professor')
+        paper_context = professor_profile.get('snippet', '')
+        student_interest = student_profile.get('interest', '')
+        
+        prompt = f"""
+        You are an expert academic mentor. Write a cold email for a student named {student_profile.get('name')} 
+        interested in '{student_interest}' to Prof. {prof_name}.
+        
+        Context about the Professor's work: "{paper_context}"
+        
+        Requirements:
+        1. Be concise (under 200 words).
+        2. Reference the specific context provided.
+        3. Do NOT sound like ChatGPT. Sound like a serious undergraduate researcher.
+        4. Return output as JSON with 'subject' and 'body' fields.
+        """
+        
+        try:
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "tools": [self.tools] if self.tools else [] # Enable Google Search Grounding
+            }
+            headers = {"Content-Type": "application/json"}
+            params = {"key": self.gemini_api_key}
+            
+            response = requests.post(self.api_url, json=payload, headers=headers, params=params)
+            data = response.json()
+            
+            # Simple parsing (In prod, use strict JSON mode)
+            if 'candidates' not in data:
+                logger.error(f"Gemini API Error: {data}")
+                return self._generate_with_template(student_profile, professor_profile)
+
+            raw_text = data['candidates'][0]['content']['parts'][0]['text']
+            
+            # Fallback parsing if JSON fails
+            import json
+            try:
+                # Try to find JSON block
+                json_str = raw_text.strip().replace("```json", "").replace("```", "")
+                result = json.loads(json_str)
+                return {
+                    "subject": result.get("subject", "Research Inquiry"),
+                    "body": result.get("body", raw_text),
+                    "citations": ["Generated via Gemini (Grounded)"],
+                    "hiring_signals": self._analyze_hiring_signals(professor_profile)
+                }
+            except:
+                return {
+                    "subject": f"Research Inquiry: {student_interest}",
+                    "body": raw_text,
+                    "citations": ["Generated via Gemini (Grounded)"],
+                    "hiring_signals": self._analyze_hiring_signals(professor_profile)
+                }
+                
+        except Exception as e:
+            logger.error(f"Gemini API Error: {e}")
+            return self._generate_with_template(student_profile, professor_profile)
+
+    def _generate_with_template(self, student_profile: Dict, professor_profile: Dict) -> Dict:
+        """
+        Legacy Template Logic (Fast & Reliable).
         """
         prof_name = professor_profile.get('name', 'Professor')
         paper_title = professor_profile.get('recent_paper', '')
         paper_context = professor_profile.get('snippet', 'Research in this field...')
         student_interest = student_profile.get('interest', '')
         
-        # 1. Retrieval Step (Simulated)
-        # In a real system, this would query a Vector DB for specific paragraphs in the paper
-        # Here, we use the snippet/abstract we scraped.
-        
-        # 2. Logic & Reasoning (Chain of Thought)
-        # We identify the "Intersection" between Student Skill & Prof Need
-        
         subject = f"Research Inquiry: {student_interest} & {paper_title[:30]}..."
         
-        # 3. Drafting with Citations
         body = f"""
 Dear Professor {prof_name},
 

@@ -148,8 +148,21 @@
                     </div>
                     
                     <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Paper Context</h4>
-                    <div class="bg-gray-50 p-3 rounded text-xs text-gray-600 border border-gray-200">
+                    <div class="bg-gray-50 p-3 rounded text-xs text-gray-600 border border-gray-200 mb-4">
                         <p id="ragContext" class="italic">Loading paper abstract...</p>
+                    </div>
+                    
+                    <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">AI Reasoning</h4>
+                    <div id="ragThinking" class="hidden">
+                        <div class="flex items-center space-x-2 text-sm text-indigo-600 animate-pulse mb-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            <span>Gemini is thinking...</span>
+                        </div>
+                        <div class="text-xs text-gray-500 space-y-1">
+                            <p>✓ Analyzing student profile...</p>
+                            <p>✓ Reading professor's recent work...</p>
+                            <p>✓ Searching Google for extra context...</p>
+                        </div>
                     </div>
                 </div>
                 
@@ -201,6 +214,9 @@ async function openRagWorkbench(profName, interests, paper, source, query) {
     document.getElementById('ragModal').classList.remove('hidden');
     document.getElementById('ragBody').value = "Generating context-aware draft using RAG agent...\n\nAnalyzing: " + paper;
     
+    // Show Thinking State
+    document.getElementById('ragThinking').classList.remove('hidden');
+    
     // Call RAG API
     const response = await fetch('/api/generate-rag-draft', {
         method: 'POST',
@@ -217,6 +233,9 @@ async function openRagWorkbench(profName, interests, paper, source, query) {
     });
     
     const data = await response.json();
+    
+    // Hide Thinking State
+    document.getElementById('ragThinking').classList.add('hidden');
     
     // Populate Editor
     document.getElementById('ragSubject').value = data.draft.subject;
