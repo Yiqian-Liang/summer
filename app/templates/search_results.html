@@ -116,8 +116,68 @@
     </div>
 </div>
 
-<!-- Email Draft Modal (Placeholder for logic) -->
+<!-- RAG Workbench Modal -->
+<div id="ragModal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onclick="closeRagModal()"></div>
+
+        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full h-[85vh] flex flex-col">
+            <div class="bg-indigo-600 px-4 py-3 sm:px-6 flex justify-between items-center border-b border-indigo-700">
+                <h3 class="text-lg leading-6 font-medium text-white" id="modal-title">
+                    ✨ RAG Application Workbench
+                </h3>
+                <button type="button" class="text-indigo-200 hover:text-white" onclick="closeRagModal()">
+                    <span class="sr-only">Close</span>
+                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            
+            <div class="flex-grow flex bg-gray-50">
+                <!-- Left: Hiring Signals & Context -->
+                <div class="w-1/3 border-r border-gray-200 bg-white p-6 overflow-y-auto">
+                    <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Hiring Intelligence</h4>
+                    
+                    <div id="ragSignals" class="space-y-3 mb-6">
+                        <!-- Signals injected via JS -->
+                        <div class="flex items-start">
+                            <span class="text-green-500 mr-2">💰</span>
+                            <p class="text-sm text-gray-700">Analyzing funding status...</p>
+                        </div>
+                    </div>
+                    
+                    <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Paper Context</h4>
+                    <div class="bg-gray-50 p-3 rounded text-xs text-gray-600 border border-gray-200">
+                        <p id="ragContext" class="italic">Loading paper abstract...</p>
+                    </div>
+                </div>
+                
+                <!-- Right: Editor -->
+                <div class="w-2/3 p-6 flex flex-col">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Subject Line</label>
+                        <input type="text" id="ragSubject" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-2 border">
+                    </div>
+                    
+                    <div class="flex-grow flex flex-col">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Email Body (Context-Aware)</label>
+                        <textarea id="ragBody" class="flex-grow w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-3 border font-mono text-sm" spellcheck="false"></textarea>
+                    </div>
+                    
+                    <div class="mt-4 flex justify-end space-x-3">
+                        <button onclick="copyDraft()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none">
+                            📋 Copy to Clipboard
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+// ... Existing Preview Logic ...
 function openPreview(url, title) {
     document.getElementById('previewModal').classList.remove('hidden');
     document.getElementById('previewTitle').innerText = title;
@@ -136,22 +196,67 @@ function closePreview() {
     document.getElementById('previewIframe').src = '';
 }
 
-async function generateDraft(profName, interests, query) {
-    // Call API
-    alert("Generating draft for " + profName + "... (Check Console for now)");
-    const response = await fetch('/api/generate-draft', {
+// ... New RAG Logic ...
+async function openRagWorkbench(profName, interests, paper, source, query) {
+    document.getElementById('ragModal').classList.remove('hidden');
+    document.getElementById('ragBody').value = "Generating context-aware draft using RAG agent...\n\nAnalyzing: " + paper;
+    
+    // Call RAG API
+    const response = await fetch('/api/generate-rag-draft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            student_name: "Student", // In real app, get from user profile
-            student_interest: query,
-            professor_data: { name: profName, interests: interests }
+            student_profile: { name: "Student", interest: query },
+            professor_profile: { 
+                name: profName, 
+                recent_paper: paper, 
+                snippet: interests, // Using interests/snippet as context for MVP
+                source: source 
+            }
         })
     });
+    
     const data = await response.json();
-    console.log(data.draft);
-    // In a real implementation, we would show another modal with the draft text
-    prompt("Copy your email draft:", data.draft);
+    
+    // Populate Editor
+    document.getElementById('ragSubject').value = data.draft.subject;
+    document.getElementById('ragBody').value = data.draft.body;
+    document.getElementById('ragContext').innerText = paper; // In real app, show abstract
+    
+    // Populate Signals
+    const signalsContainer = document.getElementById('ragSignals');
+    signalsContainer.innerHTML = '';
+    if (data.draft.hiring_signals && data.draft.hiring_signals.length > 0) {
+        data.draft.hiring_signals.forEach(sig => {
+            const div = document.createElement('div');
+            div.className = 'flex items-start';
+            div.innerHTML = `<span class="text-green-500 mr-2">✅</span><p class="text-sm text-gray-700 font-medium">${sig}</p>`;
+            signalsContainer.appendChild(div);
+        });
+    } else {
+        signalsContainer.innerHTML = '<p class="text-sm text-gray-500 italic">No specific hiring signals detected.</p>';
+    }
+}
+
+function closeRagModal() {
+    document.getElementById('ragModal').classList.add('hidden');
+}
+
+function copyDraft() {
+    const subject = document.getElementById('ragSubject').value;
+    const body = document.getElementById('ragBody').value;
+    const fullText = `Subject: ${subject}\n\n${body}`;
+    navigator.clipboard.writeText(fullText).then(() => {
+        alert("Draft copied to clipboard!");
+    });
+}
+
+// Legacy function kept for compatibility if needed, but UI now uses openRagWorkbench
+async function generateDraft(profName, interests, query) {
+    // Redirect to new RAG Workbench
+    // Note: We need 'paper' and 'source' which might be missing in this legacy call
+    // For MVP, we pass placeholder
+    openRagWorkbench(profName, interests, "Recent Paper", "Database", query);
 }
 </script>
 {% endblock %}

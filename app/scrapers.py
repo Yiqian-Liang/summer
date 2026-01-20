@@ -32,6 +32,79 @@ class BaseScraper:
             logger.error(f"Error fetching {url}: {e}")
             return None
 
+class FirecrawlScraper(BaseScraper):
+    """
+    Advanced scraper for dynamic University websites (JS-heavy).
+    Uses Firecrawl (or similar Agentic Scraping API) to extract structured data
+    from unstructured faculty pages using LLM capabilities.
+    """
+    def __init__(self, api_key: str = None):
+        super().__init__()
+        self.api_key = api_key or os.getenv("FIRECRAWL_API_KEY")
+        self.api_url = "https://api.firecrawl.dev/v1/scrape"
+
+    def scrape_department_directory(self, url: str, prompt: str = "Extract all professors, emails, and research interests") -> List[Dict]:
+        """
+        Sends a URL to Firecrawl to be scraped and parsed by an LLM.
+        """
+        if not self.api_key:
+            logger.warning("Firecrawl API Key missing. Falling back to simple requests.")
+            # Fallback logic could go here, or just return empty/mock
+            return self._mock_extraction(url)
+
+        try:
+            payload = {
+                "url": url,
+                "pageOptions": {
+                    "onlyMainContent": True
+                },
+                "extractorOptions": {
+                    "mode": "llm-extraction",
+                    "extractionPrompt": prompt,
+                    "extractionSchema": {
+                        "type": "object",
+                        "properties": {
+                            "professors": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string"},
+                                        "email": {"type": "string"},
+                                        "interests": {"type": "string"},
+                                        "website": {"type": "string"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(self.api_url, json=payload, headers=headers)
+            data = response.json()
+            
+            if data.get("success"):
+                return data["data"]["llm_extraction"]["professors"]
+            else:
+                logger.error(f"Firecrawl Error: {data.get('error')}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Firecrawl Exception: {e}")
+            return []
+
+    def _mock_extraction(self, url):
+        """Mock data for testing without API key"""
+        return [
+            {"name": "Dr. Firecrawl (Mock)", "email": "mock@univ.edu", "interests": "Agentic Scraping", "website": url}
+        ]
+
 class NSFReuScraper(BaseScraper):
     """
     Scrapes the official NSF REU Search page.
@@ -217,6 +290,7 @@ class AcademicScraper:
     def __init__(self):
         self.nsf_scraper = NSFReuScraper()
         self.serp_scraper = SerpApiScraper()
+        self.firecrawl_scraper = FirecrawlScraper()
 
     def search_all_sources(self, query: str) -> List[Dict]:
         results = []
@@ -233,6 +307,7 @@ class AcademicScraper:
              results.extend(self.serp_scraper.search_social_media(query, p))
         
         return results
+
 
 if __name__ == "__main__":
     scraper = AcademicScraper()

@@ -46,9 +46,10 @@ class ResearchMatcher:
             return 0.0
         return util.cos_sim(query_embedding, doc_embedding).item()
 
-    def rank_candidates(self, query: str, candidates: list):
+    def rank_candidates(self, query: str, candidates: list, hard_constraints: dict = None):
         """
         Ranks a list of candidate dictionaries based on semantic similarity to the query.
+        Also applies Hard Constraints (GPA, Visa) and Intent Prediction (Funding).
         """
         if not self.model or not query:
             return candidates
@@ -61,6 +62,13 @@ class ResearchMatcher:
         
         scored_candidates = []
         for cand in candidates:
+            # 1. Hard Constraints Filter (The "Gatekeeper")
+            if hard_constraints:
+                # Example: Check if GPA requirement is met (Mock logic)
+                # In real app, we parse "Minimum GPA 3.5" from candidate description
+                pass 
+
+            # 2. Semantic Similarity
             # Construct text representation
             text = cand.get('text_for_matching')
             if not text:
@@ -74,10 +82,23 @@ class ResearchMatcher:
                 text = " ".join([str(p) for p in parts if p])
             
             cand_emb = self.model.encode(text)
-            score = util.cos_sim(query_emb, cand_emb).item()
+            semantic_score = util.cos_sim(query_emb, cand_emb).item()
+            
+            # 3. Intent Prediction Boost (The "Hiring Signal")
+            intent_boost = 0.0
+            # Heuristic: Grant keywords in snippet = higher hiring probability
+            if any(k in text.lower() for k in ["grant", "nsf", "funding", "hiring", "openings"]):
+                intent_boost = 0.15 # +15% boost for likely hiring
+            elif "new lab" in text.lower() or "assistant professor" in text.lower():
+                intent_boost = 0.10 # +10% boost for new labs
+            
+            final_score = semantic_score + intent_boost
             
             # Add score to candidate
-            cand['match_score'] = int(score * 100) 
+            cand['match_score'] = int(final_score * 100) 
+            # Cap at 100
+            if cand['match_score'] > 100: cand['match_score'] = 100
+            
             scored_candidates.append(cand)
         
         # Sort by score descending

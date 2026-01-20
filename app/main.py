@@ -19,139 +19,42 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # Templates
 templates = Jinja2Templates(directory="app/templates")
 
+from app.rag import RAGWorkbench
+
 # Initialize Scraper Facade & Agents
 scraper_engine = AcademicScraper()
 research_agent = ResearchAgent()
+rag_workbench = RAGWorkbench()
 
-# Database Connection
-DB_NAME = "summer.db"
-def get_db():
-    return Database(DB_NAME)
+# ... (Database Connection code)
 
-@app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+# ... (Search Endpoint code)
 
-@app.get("/search", response_class=HTMLResponse)
-async def search(request: Request, q: Optional[str] = Query(None)):
-    query = q or ""
-    results = []
-    
-    if query:
-        # 1. Search Local Database (Programs & Professors)
-        db = get_db()
-        
-        # Search Programs Table (Full Text Search)
-        try:
-            program_matches = db["programs"].search(query)
-            for prog in program_matches:
-                results.append({
-                    "id": prog["id"],
-                    "name": prog["title"],
-                    "university": prog["institution"],
-                    "department": prog["location"], # Mapping for UI
-                    "interests": prog["tags"],
-                    "recent_paper": prog["url"], # Mapping URL to paper link slot
-                    "match_score": 0, # Placeholder, will be AI ranked
-                    "source": prog["source"],
-                    "text_for_matching": f"{prog['title']} {prog['tags']} {prog['description']}"
-                })
-        except Exception as e:
-            print(f"DB Search Error: {e}")
-
-        # 2. Live Fetch from External Sources (Scholar/Social)
-        # In a real production app, this should be a background task that populates the DB
-        # For this demo, we fetch live and merge.
-        try:
-            live_results = scraper_engine.search_all_sources(query)
-            for item in live_results:
-                results.append({
-                    "id": len(results) + 1,
-                    "name": item.get('name', item.get('title', 'Unknown')),
-                    "university": item.get('source', 'External Source'),
-                    "department": "External Match",
-                    "interests": str(item.get('interests', 'Relevance Match')),
-                    "recent_paper": item.get('recent_paper', item.get('url', '#')),
-                    "match_score": 0, # Placeholder
-                    "source": item.get('source', 'External'),
-                    "text_for_matching": f"{item.get('name', '')} {item.get('interests', '')} {item.get('snippet', '')}"
-                })
-        except Exception as e:
-            print(f"Scraper Error: {e}")
-
-        # 3. AI Semantic Ranking & Agent Reasoning
-        # Re-rank all results based on embedding similarity to the query
-        if results:
-            # Step A: Semantic Rank (Qwen)
-            results = matcher.rank_candidates(query, results)
-            
-            # Step B: Agent Analysis (Why match? + Form Detection)
-            # Only analyze top 3 results to save time/tokens
-            for i in range(min(3, len(results))):
-                # 1. Check for Direct Apply Link
-                full_text = results[i].get('text_for_matching', '')
-                form_link = research_agent.detect_application_form(full_text)
-                
-                if form_link:
-                    results[i]['direct_apply_link'] = form_link
-                    results[i]['has_direct_apply'] = True
-                
-                # 2. Analyze Match Reason
-                analysis = research_agent.analyze_match(query, results[i])
-                results[i]['agent_analysis'] = analysis['reasoning']
-                results[i]['agent_verdict'] = analysis['verdict']
-                
-                # 3. Warn if applying via email when form exists
-                if form_link:
-                    results[i]['agent_analysis'] += " ⚠️ Note: This professor likely prefers the direct application form found."
-            
-    else:
-        # Show all local programs if no query
-        db = get_db()
-        for prog in db["programs"].rows:
-             results.append({
-                "id": prog["id"],
-                "name": prog["title"],
-                "university": prog["institution"],
-                "department": prog["location"],
-                "interests": prog["tags"],
-                "recent_paper": prog["url"],
-                "match_score": 0,
-                "source": prog["source"]
-            })
-
-    return templates.TemplateResponse("search_results.html", {
-        "request": request,
-        "results": results,
-        "query": query
-    })
-
-@app.post("/api/generate-draft")
-async def generate_draft(payload: Dict = Body(...)):
+@app.post("/api/generate-rag-draft")
+async def generate_rag_draft(payload: Dict = Body(...)):
     """
-    API Endpoint for 'Safe' Cold Email Drafting.
-    Does NOT send email. Generates content for user review.
+    New API Endpoint for Context-Aware RAG Drafting.
+    Uses app/rag.py logic to create citations and analyze hiring signals.
     """
-    student_name = payload.get("student_name", "Student")
-    student_interest = payload.get("student_interest", "Research")
-    prof_data = payload.get("professor_data", {})
+    student_profile = payload.get("student_profile", {})
+    professor_profile = payload.get("professor_profile", {})
     
-    draft_content = research_agent.generate_email_draft(
-        student_name, student_interest, prof_data
+    draft_data = rag_workbench.generate_context_aware_draft(
+        student_profile, professor_profile
     )
     
-    # Log draft to DB for analytics (but not sending)
+    # Log draft to DB
     db = get_db()
     db["email_drafts"].insert({
-        "student_name": student_name,
-        "professor_name": prof_data.get("name", "Unknown"),
-        "professor_email": prof_data.get("email", ""),
-        "content": draft_content,
-        "status": "generated",
+        "student_name": student_profile.get("name", "Student"),
+        "professor_name": professor_profile.get("name", "Unknown"),
+        "professor_email": professor_profile.get("email", ""),
+        "content": draft_data["body"],
+        "status": "rag_generated",
         "created_at": datetime.datetime.now().isoformat()
     })
     
-    return JSONResponse({"draft": draft_content})
+    return JSONResponse({"draft": draft_data})
 
 if __name__ == "__main__":
     # Ensure DB exists
