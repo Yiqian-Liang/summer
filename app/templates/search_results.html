@@ -1,188 +1,256 @@
 {% extends "base.html" %}
 
 {% block content %}
+<!-- Search Header -->
 <div class="mb-8">
-    <h2 class="text-2xl font-bold text-gray-900">Search Results for "{{ query }}"</h2>
-    <p class="text-gray-500">{{ results|length }} potential matches found</p>
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+            <h2 class="text-2xl font-bold text-gray-900">
+                {% if query %}
+                {{ i18n.t('search.results_for', query=query) }}
+                {% else %}
+                {{ i18n.t('home.latest') }}
+                {% endif %}
+            </h2>
+            <p class="text-gray-500">
+                {{ i18n.t('search.results_count', count=total_count) }}
+            </p>
+        </div>
+        
+        <!-- Search Form -->
+        <form action="/search" method="get" class="flex gap-2">
+            <input type="text" name="q" value="{{ query }}" placeholder="{{ i18n.t('home.search_placeholder') }}" 
+                   class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-4 py-2 border text-sm w-72">
+            <button type="submit" class="px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
+                <i class="fas fa-search"></i>
+            </button>
+        </form>
+    </div>
 </div>
 
-<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+{% if results %}
+<!-- Results List - Unified ranking -->
+<div class="space-y-4">
     {% for result in results %}
-    <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200 hover:border-indigo-300 transition flex flex-col h-full">
-        <div class="px-4 py-5 sm:px-6 flex justify-between items-start">
-            <div>
-                <h3 class="text-lg leading-6 font-medium text-gray-900">
-                    <a href="{{ result.recent_paper }}" target="_blank" class="hover:text-indigo-600">{{ result.name }}</a>
-                </h3>
-                <p class="mt-1 max-w-2xl text-sm text-gray-500">{{ result.university }}</p>
-            </div>
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
-                {% if result.match_score > 80 %} bg-green-100 text-green-800 {% elif result.match_score > 50 %} bg-yellow-100 text-yellow-800 {% else %} bg-gray-100 text-gray-800 {% endif %}">
-                Match: {{ result.match_score }}%
-            </span>
-        </div>
-        
-        <div class="border-t border-gray-200 px-4 py-5 sm:px-6 flex-grow">
-            <!-- AI Agent Analysis Box -->
-            {% if result.agent_analysis %}
-            <div class="mb-4 bg-indigo-50 border-l-4 border-indigo-500 p-3 text-sm text-indigo-700">
-                <p class="font-bold mb-1">🤖 Agent Analysis:</p>
-                <p>{{ result.agent_analysis }}</p>
-            </div>
-            {% endif %}
-
-            <dl class="grid grid-cols-1 gap-x-4 gap-y-8 sm:grid-cols-2">
-                <div class="sm:col-span-1">
-                    <dt class="text-sm font-medium text-gray-500">Department</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ result.department }}</dd>
-                </div>
-                <div class="sm:col-span-1">
-                    <dt class="text-sm font-medium text-gray-500">Research Interests</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ result.interests }}</dd>
-                </div>
-                <div class="sm:col-span-2">
-                    <dt class="text-sm font-medium text-gray-500">Source / Recent Paper</dt>
-                    <dd class="mt-1 text-sm text-gray-900 italic truncate">
-                        <a href="{{ result.recent_paper }}" target="_blank" class="text-indigo-600 hover:underline">
-                            {{ result.recent_paper }}
+    <div class="bg-white shadow-sm rounded-lg border border-gray-200 hover:border-indigo-300 hover:shadow-md transition overflow-hidden">
+        <div class="p-5">
+            <!-- Header Row -->
+            <div class="flex items-start justify-between gap-4 mb-3">
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1 flex-wrap">
+                        <!-- Source Badge -->
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                            {% if result.source_type == 'scholar' %}bg-blue-100 text-blue-700
+                            {% elif result.source_type == 'linkedin' %}bg-sky-100 text-sky-700
+                            {% elif result.source_type == 'xiaohongshu' or result.source_type == 'rednote' %}bg-red-100 text-red-700
+                            {% elif result.source_type == 'wechat' %}bg-green-100 text-green-700
+                            {% elif result.source_type == 'twitter' %}bg-gray-100 text-gray-700
+                            {% elif result.source_type == 'nsf' %}bg-purple-100 text-purple-700
+                            {% else %}bg-gray-100 text-gray-600{% endif %}">
+                            {% if result.source_type == 'scholar' %}<i class="fas fa-graduation-cap mr-1"></i>
+                            {% elif result.source_type == 'linkedin' %}<i class="fab fa-linkedin mr-1"></i>
+                            {% elif result.source_type == 'xiaohongshu' or result.source_type == 'rednote' %}<i class="fas fa-book-open mr-1"></i>
+                            {% elif result.source_type == 'wechat' %}<i class="fab fa-weixin mr-1"></i>
+                            {% elif result.source_type == 'twitter' %}<i class="fab fa-twitter mr-1"></i>
+                            {% elif result.source_type == 'nsf' %}<i class="fas fa-flask mr-1"></i>
+                            {% elif result.source_type == 'instagram' %}<i class="fab fa-instagram mr-1"></i>
+                            {% elif result.source_type == 'zhihu' %}<i class="fas fa-question-circle mr-1"></i>
+                            {% else %}<i class="fas fa-globe mr-1"></i>{% endif %}
+                            {{ result.source_type }}
+                        </span>
+                        
+                        {% if result.university %}
+                        <span class="text-sm text-gray-500">{{ result.university }}</span>
+                        {% endif %}
+                        
+                        <!-- Quality/Recommendation Tags (instead of score) -->
+                        {% if result.quality_score and result.quality_score > 80 %}
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+                            <i class="fas fa-star text-yellow-500 mr-1"></i>{{ '优质' if i18n.is_zh() else 'Top Pick' }}
+                        </span>
+                        {% endif %}
+                        
+                        {% if result.match_score and result.match_score > 80 %}
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-700">
+                            <i class="fas fa-bullseye mr-1"></i>{{ '高匹配' if i18n.is_zh() else 'High Match' }}
+                        </span>
+                        {% endif %}
+                    </div>
+                    
+                    <h3 class="text-lg font-semibold text-gray-900 hover:text-indigo-600">
+                        <a href="/opportunity/{{ result.id }}">
+                            {{ result.title }}
                         </a>
-                    </dd>
+                    </h3>
+                    
+                    {% if result.professor_name %}
+                    <p class="text-sm text-gray-600 mt-1">
+                        <i class="fas fa-user-tie mr-1"></i> {{ result.professor_name }}
+                    </p>
+                    {% endif %}
                 </div>
-            </dl>
-        </div>
-        
-        <div class="bg-gray-50 px-4 py-4 sm:px-6 flex justify-end space-x-3 mt-auto">
-            <button onclick="openPreview('{{ result.recent_paper }}', '{{ result.name|escape }}')" class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none">
-                👁️ Quick Preview
-            </button>
+                
+                <!-- Save Button -->
+                {% if user %}
+                <button onclick="toggleSave('{{ result.id }}', this)" 
+                        class="save-btn p-2 rounded-lg hover:bg-gray-100 transition {% if result.is_saved %}text-yellow-500{% else %}text-gray-400{% endif %}"
+                        data-saved="{{ 'true' if result.is_saved else 'false' }}">
+                    <i class="{% if result.is_saved %}fas{% else %}far{% endif %} fa-bookmark text-xl"></i>
+                </button>
+                {% endif %}
+            </div>
             
-            {% if result.has_direct_apply %}
-            <a href="{{ result.direct_apply_link }}" target="_blank" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded text-white bg-green-600 hover:bg-green-700 shadow-sm focus:outline-none">
-                📝 Apply Directly
-            </a>
-            {% else %}
-            <button onclick="generateDraft('{{ result.name|escape }}', '{{ result.interests|escape }}', '{{ query|escape }}')" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm focus:outline-none">
-                ✉️ Generate Email
-            </button>
+            <!-- Description -->
+            <p class="text-gray-600 text-sm mb-3 line-clamp-2">
+                {{ result.description[:250] }}{% if result.description|length > 250 %}...{% endif %}
+            </p>
+            
+            <!-- Hiring Signals -->
+            {% if result.hiring_signals_list %}
+            <div class="flex flex-wrap gap-2 mb-3">
+                {% for signal in result.hiring_signals_list %}
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+                    <i class="fas fa-check-circle mr-1"></i>{{ signal }}
+                </span>
+                {% endfor %}
+            </div>
             {% endif %}
+            
+            <!-- AI Analysis -->
+            {% if result.agent_analysis %}
+            <div class="bg-indigo-50 border-l-4 border-indigo-400 p-3 mb-3 text-sm">
+                <p class="text-indigo-700">
+                    <i class="fas fa-robot mr-1"></i> <strong>AI:</strong> {{ result.agent_analysis }}
+                </p>
+            </div>
+            {% endif %}
+            
+            <!-- Actions -->
+            <div class="flex items-center justify-between pt-3 border-t border-gray-100">
+                <div class="text-xs text-gray-400">
+                    {% if result.deadline %}
+                    <i class="fas fa-clock mr-1"></i>{{ i18n.t('detail.deadline') }}: {{ result.deadline }}
+                    {% endif %}
+                </div>
+                
+                <div class="flex gap-2">
+                    {% if result.source_url and not result.source_url.startswith('unknown://') %}
+                    <a href="{{ result.source_url }}" target="_blank" 
+                       class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded text-gray-600 bg-gray-100 hover:bg-gray-200">
+                        <i class="fas fa-external-link-alt mr-1"></i> {{ i18n.t('detail.view_source') }}
+                    </a>
+                    {% endif %}
+                    
+                    {% if result.has_direct_apply and result.direct_apply_link %}
+                    <a href="{{ result.direct_apply_link }}" target="_blank" 
+                       class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700">
+                        <i class="fas fa-paper-plane mr-1"></i> {{ i18n.t('home.apply') }}
+                    </a>
+                    {% else %}
+                    <button onclick="openRagWorkbench('{{ result.professor_name|default('Professor', true)|escape }}', '{{ result.description[:100]|escape }}', '{{ result.title|escape }}', '{{ result.source_type }}', '{{ query|escape }}')" 
+                            class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700">
+                        <i class="fas fa-envelope mr-1"></i> {{ i18n.t('detail.generate_email') }}
+                    </button>
+                    {% endif %}
+                    
+                    <a href="/opportunity/{{ result.id }}" 
+                       class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded text-indigo-600 bg-indigo-50 hover:bg-indigo-100">
+                        {{ i18n.t('home.details') }} <i class="fas fa-arrow-right ml-1"></i>
+                    </a>
+                </div>
+            </div>
         </div>
-    </div>
-    {% else %}
-    <div class="col-span-2 text-center py-12 text-gray-500">
-        No results found. Try adjusting your search terms.
     </div>
     {% endfor %}
 </div>
 
-<!-- Preview Modal -->
-<div id="previewModal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-        <!-- Background overlay -->
-        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onclick="closePreview()"></div>
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div class="mt-8 flex justify-center">
+    <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+        {% if has_prev %}
+        <a href="/search?q={{ query }}&page={{ current_page - 1 }}" 
+           class="relative inline-flex items-center px-3 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+            <i class="fas fa-chevron-left"></i>
+        </a>
+        {% endif %}
+        
+        <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+            {{ i18n.t('common.page', current=current_page, total=total_pages) }}
+        </span>
+        
+        {% if has_next %}
+        <a href="/search?q={{ query }}&page={{ current_page + 1 }}" 
+           class="relative inline-flex items-center px-3 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+            <i class="fas fa-chevron-right"></i>
+        </a>
+        {% endif %}
+    </nav>
+</div>
+{% endif %}
 
-        <!-- Modal panel -->
-        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-6xl sm:w-full h-[85vh] flex flex-col">
-            <div class="bg-gray-50 px-4 py-3 sm:px-6 flex justify-between items-center border-b">
-                <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
-                    Website Preview: <span id="previewTitle"></span>
-                </h3>
-                <div class="flex space-x-2">
-                    <a id="previewExternalLink" href="#" target="_blank" class="text-sm text-indigo-600 hover:text-indigo-900 font-medium">
-                        Open in New Tab ↗
-                    </a>
-                    <button type="button" class="text-gray-400 hover:text-gray-500" onclick="closePreview()">
-                        <span class="sr-only">Close</span>
-                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
-            </div>
-            <div class="flex-grow bg-gray-100 relative">
-                <div id="iframeLoader" class="absolute inset-0 flex items-center justify-center text-gray-500">
-                    <p>Loading preview...</p>
-                </div>
-                <iframe id="previewIframe" src="" class="w-full h-full border-0" onload="document.getElementById('iframeLoader').style.display='none'"></iframe>
-                
-                <!-- Fallback Message (Hidden by default, simplistic implementation) -->
-                <div id="iframeError" class="hidden absolute inset-0 flex flex-col items-center justify-center bg-white p-8 text-center">
-                    <p class="text-gray-500 mb-4">This website does not allow embedding (Security Headers).</p>
-                    <a id="fallbackLink" href="#" target="_blank" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
-                        Open Website Externally
-                    </a>
-                </div>
-            </div>
-        </div>
+{% else %}
+<!-- Empty State -->
+<div class="text-center py-16 bg-white rounded-lg shadow-sm border border-gray-200">
+    <div class="text-6xl text-gray-300 mb-4"><i class="fas fa-search"></i></div>
+    <h3 class="text-lg font-medium text-gray-900 mb-2">
+        {{ i18n.t('search.no_results') }}
+    </h3>
+    <p class="text-gray-500 mb-6">
+        {{ i18n.t('search.try_keywords') }}
+    </p>
+    <div class="flex flex-wrap justify-center gap-3">
+        <a href="/search?q=machine+learning" class="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-full text-sm hover:bg-indigo-100">machine learning</a>
+        <a href="/search?q=NLP" class="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-full text-sm hover:bg-indigo-100">NLP</a>
+        <a href="/search?q=computer+vision" class="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-full text-sm hover:bg-indigo-100">computer vision</a>
+        <a href="/search?q=暑研" class="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-full text-sm hover:bg-indigo-100">暑研</a>
+        <a href="/search?q=PhD+position" class="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-full text-sm hover:bg-indigo-100">PhD position</a>
     </div>
 </div>
+{% endif %}
 
 <!-- RAG Workbench Modal -->
-<div id="ragModal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+<div id="ragModal" class="fixed inset-0 z-50 hidden overflow-y-auto">
     <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onclick="closeRagModal()"></div>
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onclick="closeRagModal()"></div>
 
-        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full h-[85vh] flex flex-col">
-            <div class="bg-indigo-600 px-4 py-3 sm:px-6 flex justify-between items-center border-b border-indigo-700">
-                <h3 class="text-lg leading-6 font-medium text-white" id="modal-title">
-                    ✨ RAG Application Workbench
+        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full">
+            <div class="bg-indigo-600 px-4 py-3 flex justify-between items-center">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fas fa-magic mr-2"></i> {{ i18n.t('detail.generate_email') }}
                 </h3>
                 <button type="button" class="text-indigo-200 hover:text-white" onclick="closeRagModal()">
-                    <span class="sr-only">Close</span>
                     <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                 </button>
             </div>
             
-            <div class="flex-grow flex bg-gray-50">
-                <!-- Left: Hiring Signals & Context -->
-                <div class="w-1/3 border-r border-gray-200 bg-white p-6 overflow-y-auto">
-                    <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Hiring Intelligence</h4>
-                    
-                    <div id="ragSignals" class="space-y-3 mb-6">
-                        <!-- Signals injected via JS -->
-                        <div class="flex items-start">
-                            <span class="text-green-500 mr-2">💰</span>
-                            <p class="text-sm text-gray-700">Analyzing funding status...</p>
-                        </div>
-                    </div>
-                    
-                    <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Paper Context</h4>
-                    <div class="bg-gray-50 p-3 rounded text-xs text-gray-600 border border-gray-200 mb-4">
-                        <p id="ragContext" class="italic">Loading paper abstract...</p>
-                    </div>
-                    
-                    <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">AI Reasoning</h4>
-                    <div id="ragThinking" class="hidden">
-                        <div class="flex items-center space-x-2 text-sm text-indigo-600 animate-pulse mb-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                            <span>Gemini is thinking...</span>
-                        </div>
-                        <div class="text-xs text-gray-500 space-y-1">
-                            <p>✓ Analyzing student profile...</p>
-                            <p>✓ Reading professor's recent work...</p>
-                            <p>✓ Searching Google for extra context...</p>
-                        </div>
-                    </div>
+            <div class="p-6">
+                <div class="mb-4">
+                    <button onclick="runRagGeneration()" class="w-full inline-flex justify-center items-center px-4 py-3 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+                        <i class="fas fa-rocket mr-2"></i> {{ '生成个性化邮件' if i18n.is_zh() else 'Generate Personalized Email' }}
+                    </button>
                 </div>
                 
-                <!-- Right: Editor -->
-                <div class="w-2/3 p-6 flex flex-col">
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700">Subject Line</label>
-                        <input type="text" id="ragSubject" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-2 border">
-                    </div>
-                    
-                    <div class="flex-grow flex flex-col">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Email Body (Context-Aware)</label>
-                        <textarea id="ragBody" class="flex-grow w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-3 border font-mono text-sm" spellcheck="false"></textarea>
-                    </div>
-                    
-                    <div class="mt-4 flex justify-end space-x-3">
-                        <button onclick="copyDraft()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none">
-                            📋 Copy to Clipboard
-                        </button>
-                    </div>
+                <div id="ragThinking" class="hidden mb-4 text-center text-indigo-600">
+                    <i class="fas fa-spinner fa-spin mr-2"></i> {{ i18n.t('common.loading') }}
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">{{ '主题' if i18n.is_zh() else 'Subject' }}</label>
+                    <input type="text" id="ragSubject" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-2 border">
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">{{ '邮件正文' if i18n.is_zh() else 'Email Body' }}</label>
+                    <textarea id="ragBody" rows="10" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-3 border font-mono text-sm"></textarea>
+                </div>
+                
+                <div class="flex justify-end">
+                    <button onclick="copyDraft()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700">
+                        <i class="fas fa-copy mr-2"></i> {{ '复制到剪贴板' if i18n.is_zh() else 'Copy to Clipboard' }}
+                    </button>
                 </div>
             </div>
         </div>
@@ -190,34 +258,21 @@
 </div>
 
 <script>
-// ... Existing Preview Logic ...
-function openPreview(url, title) {
-    document.getElementById('previewModal').classList.remove('hidden');
-    document.getElementById('previewTitle').innerText = title;
-    document.getElementById('previewExternalLink').href = url;
-    document.getElementById('fallbackLink').href = url;
-    
-    // Reset iframe
-    const iframe = document.getElementById('previewIframe');
-    iframe.src = url;
-    document.getElementById('iframeLoader').style.display = 'flex';
-    document.getElementById('iframeError').classList.add('hidden');
-}
+let currentProfProfile = {};
 
-function closePreview() {
-    document.getElementById('previewModal').classList.add('hidden');
-    document.getElementById('previewIframe').src = '';
-}
-
-// ... New RAG Logic ...
-async function openRagWorkbench(profName, interests, paper, source, query) {
+function openRagWorkbench(profName, interests, title, source, query) {
     document.getElementById('ragModal').classList.remove('hidden');
-    document.getElementById('ragBody').value = "Generating context-aware draft using RAG agent...\n\nAnalyzing: " + paper;
+    currentProfProfile = { profName, interests, title, source, query };
+    document.getElementById('ragSubject').value = "";
+    document.getElementById('ragBody').value = "";
+}
+
+async function runRagGeneration() {
+    const { profName, interests, title, source, query } = currentProfProfile;
     
-    // Show Thinking State
     document.getElementById('ragThinking').classList.remove('hidden');
+    document.getElementById('ragBody').value = "";
     
-    // Call RAG API
     const response = await fetch('/api/generate-rag-draft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -225,36 +280,19 @@ async function openRagWorkbench(profName, interests, paper, source, query) {
             student_profile: { name: "Student", interest: query },
             professor_profile: { 
                 name: profName, 
-                recent_paper: paper, 
-                snippet: interests, // Using interests/snippet as context for MVP
+                recent_paper: title, 
+                snippet: interests,
                 source: source 
-            }
+            },
+            include_social_media: false
         })
     });
     
     const data = await response.json();
     
-    // Hide Thinking State
     document.getElementById('ragThinking').classList.add('hidden');
-    
-    // Populate Editor
     document.getElementById('ragSubject').value = data.draft.subject;
     document.getElementById('ragBody').value = data.draft.body;
-    document.getElementById('ragContext').innerText = paper; // In real app, show abstract
-    
-    // Populate Signals
-    const signalsContainer = document.getElementById('ragSignals');
-    signalsContainer.innerHTML = '';
-    if (data.draft.hiring_signals && data.draft.hiring_signals.length > 0) {
-        data.draft.hiring_signals.forEach(sig => {
-            const div = document.createElement('div');
-            div.className = 'flex items-start';
-            div.innerHTML = `<span class="text-green-500 mr-2">✅</span><p class="text-sm text-gray-700 font-medium">${sig}</p>`;
-            signalsContainer.appendChild(div);
-        });
-    } else {
-        signalsContainer.innerHTML = '<p class="text-sm text-gray-500 italic">No specific hiring signals detected.</p>';
-    }
 }
 
 function closeRagModal() {
@@ -264,18 +302,38 @@ function closeRagModal() {
 function copyDraft() {
     const subject = document.getElementById('ragSubject').value;
     const body = document.getElementById('ragBody').value;
-    const fullText = `Subject: ${subject}\n\n${body}`;
-    navigator.clipboard.writeText(fullText).then(() => {
-        alert("Draft copied to clipboard!");
+    navigator.clipboard.writeText(`Subject: ${subject}\n\n${body}`).then(() => {
+        alert("{{ '已复制！' if i18n.is_zh() else 'Copied!' }}");
     });
 }
 
-// Legacy function kept for compatibility if needed, but UI now uses openRagWorkbench
-async function generateDraft(profName, interests, query) {
-    // Redirect to new RAG Workbench
-    // Note: We need 'paper' and 'source' which might be missing in this legacy call
-    // For MVP, we pass placeholder
-    openRagWorkbench(profName, interests, "Recent Paper", "Database", query);
+// Save toggle function
+async function toggleSave(oppId, btn) {
+    const isSaved = btn.dataset.saved === 'true';
+    const method = isSaved ? 'DELETE' : 'POST';
+    
+    try {
+        const response = await fetch(`/api/save/${oppId}`, { method });
+        if (response.ok) {
+            btn.dataset.saved = isSaved ? 'false' : 'true';
+            const icon = btn.querySelector('i');
+            if (isSaved) {
+                icon.classList.remove('fas');
+                icon.classList.add('far');
+                btn.classList.remove('text-yellow-500');
+                btn.classList.add('text-gray-400');
+            } else {
+                icon.classList.remove('far');
+                icon.classList.add('fas');
+                btn.classList.remove('text-gray-400');
+                btn.classList.add('text-yellow-500');
+            }
+        } else if (response.status === 401) {
+            window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+        }
+    } catch (e) {
+        console.error('Save failed:', e);
+    }
 }
 </script>
 {% endblock %}

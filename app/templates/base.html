@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ 'zh-CN' if i18n.is_zh() else 'en' }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Academic Match{% endblock %}</title>
+    <title>{% block title %}{{ i18n.t('site.name') }}{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
@@ -13,18 +13,63 @@
             <div class="flex items-center justify-between h-16">
                 <div class="flex items-center">
                     <a href="/" class="flex-shrink-0 font-bold text-xl">
-                        <i class="fas fa-graduation-cap mr-2"></i>Global Academic Match
+                        <i class="fas fa-graduation-cap mr-2"></i>{{ i18n.t('site.name') }}
                     </a>
                     <div class="hidden md:block">
                         <div class="ml-10 flex items-baseline space-x-4">
-                            <a href="/" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">Home</a>
-                            <a href="/search" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">Search Programs</a>
-                            <a href="#" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">Community</a>
+                            <a href="/" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">{{ i18n.t('nav.home') }}</a>
+                            <a href="/search" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">{{ i18n.t('nav.search') }}</a>
+                            {% if user %}
+                            <a href="/saved" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">
+                                <i class="fas fa-bookmark mr-1"></i>{{ i18n.t('nav.saved') }}
+                            </a>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
-                <div>
-                    <a href="#" class="bg-indigo-700 hover:bg-indigo-800 px-4 py-2 rounded-md text-sm font-medium">Login / Sign Up</a>
+                <div class="flex items-center space-x-3">
+                    <!-- Language Switcher -->
+                    <div class="relative group">
+                        <button class="flex items-center space-x-1 hover:bg-indigo-500 px-2 py-2 rounded-md text-sm">
+                            <i class="fas fa-globe"></i>
+                            <span class="hidden sm:inline">{{ languages[i18n.get_lang()] }}</span>
+                            <i class="fas fa-chevron-down text-xs"></i>
+                        </button>
+                        <div class="absolute right-0 mt-1 w-32 bg-white rounded-md shadow-lg py-1 hidden group-hover:block z-50">
+                            {% for lang_code, lang_name in languages.items() %}
+                            <a href="/set-lang/{{ lang_code }}" 
+                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {% if i18n.get_lang() == lang_code %}bg-indigo-50 text-indigo-600{% endif %}">
+                                {% if lang_code == 'zh' %}<span class="mr-2">🇨🇳</span>{% else %}<span class="mr-2">🇺🇸</span>{% endif %}
+                                {{ lang_name }}
+                            </a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    
+                    {% if user %}
+                    <div class="relative group">
+                        <button class="flex items-center space-x-2 hover:bg-indigo-500 px-3 py-2 rounded-md">
+                            <i class="fas fa-user-circle text-xl"></i>
+                            <span class="text-sm font-medium hidden sm:inline">{{ user.username }}</span>
+                            <i class="fas fa-chevron-down text-xs"></i>
+                        </button>
+                        <div class="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg py-1 hidden group-hover:block z-50">
+                            <a href="/onboarding" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <i class="fas fa-sliders-h mr-2"></i>{{ i18n.t('nav.settings') }}
+                            </a>
+                            <a href="/saved" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <i class="fas fa-bookmark mr-2"></i>{{ i18n.t('nav.saved') }}
+                            </a>
+                            <hr class="my-1">
+                            <a href="/logout" class="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100">
+                                <i class="fas fa-sign-out-alt mr-2"></i>{{ i18n.t('nav.logout') }}
+                            </a>
+                        </div>
+                    </div>
+                    {% else %}
+                    <a href="/login" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">{{ i18n.t('nav.login') }}</a>
+                    <a href="/register" class="bg-white text-indigo-600 hover:bg-gray-100 px-4 py-2 rounded-md text-sm font-medium">{{ i18n.t('nav.register') }}</a>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -36,7 +81,7 @@
 
     <footer class="bg-gray-800 text-gray-300 py-6">
         <div class="max-w-7xl mx-auto px-4 text-center">
-            <p>&copy; 2025 Global Academic Recruitment & Research Match System. All rights reserved.</p>
+            <p>&copy; 2026 {{ i18n.t('site.name') }}. All rights reserved.</p>
             <p class="text-sm mt-2 text-gray-400">Powered by AI & Open Data</p>
         </div>
     </footer>

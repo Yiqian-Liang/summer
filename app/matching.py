@@ -7,26 +7,18 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class ResearchMatcher:
-    def __init__(self, model_name='Alibaba-NLP/gte-Qwen2-1.5B-instruct', trust_remote_code=True):
+    def __init__(self, model_name='paraphrase-multilingual-MiniLM-L12-v2', trust_remote_code=True):
         """
-        Initializes the matcher with the Qwen2-1.5B model.
-        Qwen is a state-of-the-art multilingual model that excels at long-context retrieval.
-        It supports Chinese and English perfectly.
-        
-        Note on Model Selection (2025 Strategy):
-        - We use 'Alibaba-NLP/gte-Qwen2-1.5B-instruct' as the primary model because it handles 
-          Multilingual (Chinese/English) data from Xiaohongshu/LinkedIn better than SPECTER.
-        - Future Upgrade Path: Consider a hybrid approach using 'allenai/specter2' 
-          specifically for the citation-graph analysis step if the academic matching needs 
-          to be more rigorous on citation networks.
+        Initializes the matcher with a lightweight multilingual model.
+        paraphrase-multilingual-MiniLM-L12-v2 supports 50+ languages including Chinese and English,
+        loads fast (~500MB) and works well for semantic similarity.
         """
-        logger.info(f"Loading Enterprise AI Model: {model_name}...")
+        logger.info(f"Loading AI Model: {model_name}...")
         try:
-            # trust_remote_code is needed for some new architectures, though sentence-transformers usually handles it
-            self.model = SentenceTransformer(model_name, trust_remote_code=trust_remote_code)
-            logger.info(f"Enterprise AI Model ({model_name}) loaded successfully.")
+            self.model = SentenceTransformer(model_name)
+            logger.info(f"AI Model ({model_name}) loaded successfully.")
         except Exception as e:
-            logger.error(f"Failed to load Qwen model: {e}")
+            logger.error(f"Failed to load model: {e}")
             logger.warning("Falling back to lightweight model 'all-MiniLM-L6-v2'")
             try:
                 self.model = SentenceTransformer('all-MiniLM-L6-v2')

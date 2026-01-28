@@ -235,77 +235,266 @@ class SerpApiScraper(BaseScraper):
             logger.error(f"SerpApi Social Search Error ({platform}): {e}")
             return self._mock_social_data(query, platform)
 
+    def _mock_scholar_data(self, query):
+        """Mock Google Scholar data for testing without API key."""
+        return [
+            {
+                "name": f"Deep Learning Approaches for {query}",
+                "university": "Stanford University",
+                "department": "Computer Science",
+                "interests": f"Research on {query}, neural networks, and optimization methods for large-scale systems.",
+                "recent_paper": "https://arxiv.org/abs/2401.12345",
+                "source": "Google Scholar",
+                "professor_name": "Dr. Andrew Ng",
+            },
+            {
+                "name": f"Advances in {query}: A Comprehensive Survey",
+                "university": "MIT",
+                "department": "EECS",
+                "interests": f"Survey paper covering recent advances in {query}, including transformers and attention mechanisms.",
+                "recent_paper": "https://arxiv.org/abs/2402.54321",
+                "source": "Google Scholar",
+                "professor_name": "Dr. Regina Barzilay",
+            },
+            {
+                "name": f"Efficient {query} for Resource-Constrained Devices",
+                "university": "CMU",
+                "department": "Machine Learning",
+                "interests": f"Model compression, quantization, and efficient inference for {query} applications.",
+                "recent_paper": "https://arxiv.org/abs/2403.11111",
+                "source": "Google Scholar",
+                "professor_name": "Dr. Ruslan Salakhutdinov",
+            },
+        ]
+
     def _mock_social_data(self, query, platform="rednote"):
-        if platform == "linkedin":
-            return [{
-                "title": f"PhD Student in {query} at Stanford",
-                "author": "Jane Doe",
-                "url": "https://www.linkedin.com/in/janedoe",
-                "source": "LinkedIn (Mock)",
-                "snippet": f"Researching {query} and Agents..."
-            }]
-        elif platform == "instagram":
-             return [{
-                "title": f"{query} Lab Group Photo",
-                "author": "mit_csail",
-                "url": "https://www.instagram.com/p/...",
-                "source": "Instagram (Mock)",
-                "snippet": "Our team presenting at CVPR..."
-            }]
-        elif platform == "wechat":
-             return [{
-                "title": f"CS Top 50 Summer Research Opportunities ({query})",
-                "author": "CS_Go_Abroad",
-                "url": "https://mp.weixin.qq.com/s/...",
-                "source": "WeChat Official Account (Mock)",
-                "snippet": f"Summary of {query} labs hiring interns..."
-            }]
-        elif platform == "twitter":
-             return [{
-                "title": f"Hiring PhD students in {query}!",
-                "author": "Prof_AI",
-                "url": "https://twitter.com/...",
-                "source": "Twitter (Mock)",
-                "snippet": "My lab is looking for 2 PhD students..."
-            }]
-        elif platform == "discord":
-             return [{
-                "title": f"{query} Research Community Invite",
-                "author": "Discord",
-                "url": "https://discord.com/invite/...",
-                "source": "Discord (Mock)",
-                "snippet": "Join our server to discuss recent papers in..."
-            }]
-        else:
-            return [{
-                "title": f"Summer Research 2025 at MIT ({query})",
-                "author": "StudyAbroad_Helper",
-                "url": "https://www.xiaohongshu.com/discovery/item/...",
-                "source": f"{platform.title()} (Mock)",
-                "snippet": "Detailed guide on applying to MIT SGI..."
-            }]
+        """Mock social media data for testing without API key."""
+        mock_data = {
+            "linkedin": [
+                {
+                    "title": f"Hiring PhD Students - {query} Lab",
+                    "author": "Prof. Sarah Chen",
+                    "url": "https://www.linkedin.com/posts/sarahchen-ml",
+                    "source": "LinkedIn",
+                    "snippet": f"🎓 My lab at Stanford is hiring 2 PhD students for Fall 2026! Looking for candidates with strong background in {query}. Fully funded positions with competitive stipend. DM me!"
+                },
+                {
+                    "title": f"Summer Research Intern Openings - {query}",
+                    "author": "Google DeepMind",
+                    "url": "https://www.linkedin.com/jobs/view/123456",
+                    "source": "LinkedIn",
+                    "snippet": f"We're looking for summer interns to join our {query} team. Work on cutting-edge research with world-class researchers. Apply by March 15!"
+                }
+            ],
+            "instagram": [
+                {
+                    "title": f"{query} Research Lab - Summer Program",
+                    "author": "mit_csail",
+                    "url": "https://www.instagram.com/p/xyz123",
+                    "source": "Instagram",
+                    "snippet": f"Applications now open for our {query} summer research program! 10 weeks, fully funded, work with top researchers. Link in bio 🔗"
+                }
+            ],
+            "wechat": [
+                {
+                    "title": f"【招生】2026暑研汇总：{query}方向",
+                    "author": "一亩三分地",
+                    "url": "https://mp.weixin.qq.com/s/abc123",
+                    "source": "微信公众号",
+                    "snippet": f"整理了北美Top50学校{query}方向的暑研机会，包括MIT、Stanford、CMU等。内含申请时间线、套磁模板..."
+                },
+                {
+                    "title": f"Stanford {query} Lab 招暑期实习生",
+                    "author": "CS申请圈",
+                    "url": "https://mp.weixin.qq.com/s/def456",
+                    "source": "微信公众号",
+                    "snippet": f"Stanford {query} Lab 现招收2026年暑期实习生，要求：本科在读，有相关研究经验，申请截止：3月1日"
+                }
+            ],
+            "twitter": [
+                {
+                    "title": f"PhD positions in {query}",
+                    "author": "@prof_ml_research",
+                    "url": "https://twitter.com/prof_ml_research/status/123",
+                    "source": "Twitter/X",
+                    "snippet": f"📢 Fully funded PhD positions available! Looking for motivated students interested in {query}. Strong math background preferred. Apply: [link] #phdposition #academia"
+                }
+            ],
+            "rednote": [
+                {
+                    "title": f"暑研申请经验分享 | {query}方向",
+                    "author": "留学小助手",
+                    "url": "https://www.xiaohongshu.com/explore/abc",
+                    "source": "小红书",
+                    "snippet": f"分享我申请{query}方向暑研的经验！从选校到套磁到面试，全流程攻略~今年拿到了Stanford和MIT的offer，选了Stanford..."
+                },
+                {
+                    "title": f"CMU {query} 实验室招人啦！",
+                    "author": "CS求职日记",
+                    "url": "https://www.xiaohongshu.com/explore/def",
+                    "source": "小红书",
+                    "snippet": f"导师人超好！CMU的{query}实验室在招暑期实习生和PhD，不卡学校背景，看重研究潜力。有兴趣的同学可以发邮件..."
+                }
+            ],
+            "zhihu": [
+                {
+                    "title": f"如何申请{query}方向的暑研？",
+                    "author": "知乎用户",
+                    "url": "https://www.zhihu.com/question/12345",
+                    "source": "知乎",
+                    "snippet": f"高赞回答：{query}方向暑研申请攻略。首先要明确目标学校和导师，然后准备好CV和研究计划..."
+                }
+            ],
+        }
+        return mock_data.get(platform, mock_data["rednote"])
+
+class GeminiSearcher:
+    """
+    Uses Gemini 2.0 with Google Search Grounding to find research opportunities.
+    This leverages Google's search infrastructure directly through Gemini.
+    """
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        self.api_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent"
+    
+    def search_opportunities(self, query: str) -> List[Dict]:
+        """
+        Uses Gemini with Google Search grounding to find summer research opportunities.
+        """
+        if not self.api_key:
+            logger.warning("Gemini API key not set. Skipping Gemini search.")
+            return []
+        
+        prompt = f"""
+        Search for summer research opportunities, PhD positions, and research internships related to: "{query}"
+        
+        Focus on:
+        1. Professor labs that are hiring
+        2. Summer research programs (like REU, SURF, etc.)
+        3. PhD positions at universities
+        4. Research internships at companies
+        
+        For each opportunity found, extract:
+        - Title/Position name
+        - Professor or organization name
+        - University or company
+        - Brief description
+        - URL if available
+        - Any deadline mentioned
+        
+        Return the results as a JSON array with objects containing: title, professor_name, university, description, url, deadline, source
+        Only return the JSON array, no other text.
+        """
+        
+        try:
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "tools": [{
+                    "google_search_retrieval": {
+                        "dynamic_retrieval_config": {
+                            "mode": "MODE_DYNAMIC",
+                            "dynamic_threshold": 0.3
+                        }
+                    }
+                }]
+            }
+            
+            headers = {"Content-Type": "application/json"}
+            params = {"key": self.api_key}
+            
+            response = requests.post(self.api_url, json=payload, headers=headers, params=params, timeout=30)
+            data = response.json()
+            
+            if 'candidates' not in data:
+                logger.error(f"Gemini Search Error: {data}")
+                return []
+            
+            raw_text = data['candidates'][0]['content']['parts'][0]['text']
+            
+            # Parse JSON from response
+            import json
+            try:
+                # Try to extract JSON from the response
+                json_str = raw_text.strip()
+                if json_str.startswith("```"):
+                    json_str = json_str.split("```")[1]
+                    if json_str.startswith("json"):
+                        json_str = json_str[4:]
+                
+                results = json.loads(json_str)
+                
+                # Normalize results
+                normalized = []
+                for item in results:
+                    normalized.append({
+                        "title": item.get("title", "Research Opportunity"),
+                        "name": item.get("title", "Research Opportunity"),
+                        "professor_name": item.get("professor_name") or item.get("professor"),
+                        "university": item.get("university") or item.get("organization", ""),
+                        "description": item.get("description", ""),
+                        "snippet": item.get("description", ""),
+                        "interests": item.get("description", ""),
+                        "url": item.get("url", ""),
+                        "recent_paper": item.get("url", ""),
+                        "deadline": item.get("deadline"),
+                        "source": "Gemini Search (Google)",
+                    })
+                
+                logger.info(f"Gemini Search found {len(normalized)} results for '{query}'")
+                return normalized
+                
+            except json.JSONDecodeError:
+                logger.warning("Could not parse Gemini response as JSON, returning raw text")
+                return [{
+                    "title": f"Research opportunities in {query}",
+                    "name": f"Research opportunities in {query}",
+                    "description": raw_text[:500],
+                    "snippet": raw_text[:500],
+                    "source": "Gemini Search (Google)",
+                    "url": ""
+                }]
+                
+        except Exception as e:
+            logger.error(f"Gemini Search Error: {e}")
+            return []
+
 
 class AcademicScraper:
-    """Facade to coordinate multiple scrapers."""
+    """Facade to coordinate multiple scrapers including SerpApi and Gemini."""
     def __init__(self):
         self.nsf_scraper = NSFReuScraper()
         self.serp_scraper = SerpApiScraper()
         self.firecrawl_scraper = FirecrawlScraper()
+        self.gemini_searcher = GeminiSearcher()
 
-    def search_all_sources(self, query: str) -> List[Dict]:
+    def search_all_sources(self, query: str, use_gemini: bool = True) -> List[Dict]:
+        """
+        Search all available sources and combine results.
+        Uses SerpApi for structured search and optionally Gemini for AI-powered search.
+        """
         results = []
         
-        # 1. Official NSF REU (Cached/Scraped)
-        # results.extend(self.nsf_scraper.scrape_listings()) 
+        # 1. SerpApi: Google Scholar search
+        logger.info(f"Searching Google Scholar via SerpApi for: {query}")
+        scholar_results = self.serp_scraper.search_scholar(query)
+        results.extend(scholar_results)
+        logger.info(f"SerpApi Scholar: {len(scholar_results)} results")
         
-        # 2. Search Scholar
-        results.extend(self.serp_scraper.search_scholar(query))
+        # 2. SerpApi: Social media platforms
+        platforms = ["linkedin", "wechat", "rednote", "twitter"]
+        for platform in platforms:
+            platform_results = self.serp_scraper.search_social_media(query, platform)
+            results.extend(platform_results)
+            logger.info(f"SerpApi {platform}: {len(platform_results)} results")
         
-        # 3. Search Global Social Media
-        platforms = ["rednote", "linkedin", "instagram", "wechat", "twitter", "zhihu", "bilibili", "discord"]
-        for p in platforms:
-             results.extend(self.serp_scraper.search_social_media(query, p))
+        # 3. Gemini Search (AI-powered with Google Search grounding)
+        if use_gemini and self.gemini_searcher.api_key:
+            logger.info(f"Searching via Gemini for: {query}")
+            gemini_results = self.gemini_searcher.search_opportunities(query)
+            results.extend(gemini_results)
+            logger.info(f"Gemini Search: {len(gemini_results)} results")
         
+        logger.info(f"Total results from all sources: {len(results)}")
         return results
 
 

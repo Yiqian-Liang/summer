@@ -1,40 +1,281 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="text-center py-12">
+<!-- Hero Section -->
+<div class="text-center py-8 mb-8">
+    {% if user %}
+    <h1 class="text-4xl font-extrabold text-gray-900 sm:text-5xl">
+        <span class="block">{{ i18n.t('home.welcome_back', username=user.username) }}</span>
+        <span class="block text-indigo-600 text-3xl mt-2">{{ i18n.t('home.discover') }}</span>
+    </h1>
+    {% if profile %}
+    <p class="mt-3 text-gray-500">
+        {{ i18n.t('home.personalized') }}
+        <a href="/onboarding" class="text-indigo-600 hover:underline">{{ i18n.t('home.edit_prefs') }}</a>
+    </p>
+    {% else %}
+    <p class="mt-3 text-gray-500">
+        <a href="/onboarding" class="text-indigo-600 hover:underline font-medium">
+            <i class="fas fa-magic mr-1"></i>{{ i18n.t('home.complete_profile') }}
+        </a>
+    </p>
+    {% endif %}
+    {% else %}
     <h1 class="text-4xl font-extrabold text-gray-900 sm:text-5xl md:text-6xl">
-        <span class="block">Find Your Perfect</span>
-        <span class="block text-indigo-600">Summer Research & PhD</span>
+        <span class="block">{{ i18n.t('site.tagline').split('&')[0] if i18n.is_zh() else 'Find Your Perfect' }}</span>
+        <span class="block text-indigo-600">{{ '暑研 & PhD 机会' if i18n.is_zh() else 'Summer Research & PhD' }}</span>
     </h1>
     <p class="mt-3 max-w-md mx-auto text-base text-gray-500 sm:text-lg md:mt-5 md:text-xl md:max-w-3xl">
-        AI-driven matching for global academic opportunities. Connect with professors, find funding, and accelerate your research career.
+        {{ i18n.t('site.description') }}
     </p>
-    <div class="mt-10 max-w-xl mx-auto">
+    {% endif %}
+    <div class="mt-8 max-w-xl mx-auto">
         <form action="/search" method="get" class="flex flex-col sm:flex-row gap-4">
-            <input type="text" name="q" placeholder="Research Interest (e.g., NLP, Computer Vision)..." 
+            <input type="text" name="q" placeholder="{{ i18n.t('home.search_placeholder') }}" 
                    class="flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-4 py-3 border">
             <button type="submit" class="w-full sm:w-auto flex justify-center py-3 px-6 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                Search
+                <i class="fas fa-search mr-2"></i> {{ i18n.t('home.search_btn') }}
             </button>
         </form>
     </div>
 </div>
 
+<!-- Recommended Searches (for logged in users with profile) -->
+{% if user and recommended_searches %}
+<div class="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 mb-6">
+    <p class="text-sm text-gray-600 mb-2"><i class="fas fa-lightbulb text-yellow-500 mr-1"></i> {{ i18n.t('home.recommended_searches') }}</p>
+    <div class="flex flex-wrap gap-2">
+        {% for search in recommended_searches %}
+        <a href="/search?q={{ search }}" 
+           class="px-3 py-1.5 bg-white text-indigo-700 rounded-full text-sm hover:bg-indigo-100 transition shadow-sm">
+            {{ search }}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Stats Bar -->
+<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-8">
+    <div class="flex flex-wrap justify-center gap-8 text-center">
+        <div>
+            <span class="text-2xl font-bold text-indigo-600">{{ total_count }}</span>
+            <p class="text-sm text-gray-500">{{ i18n.t('home.opportunities') }}</p>
+        </div>
+        <div>
+            <span class="text-2xl font-bold text-green-600">10+</span>
+            <p class="text-sm text-gray-500">{{ i18n.t('home.platforms') }}</p>
+        </div>
+        <div>
+            <span class="text-2xl font-bold text-purple-600">AI</span>
+            <p class="text-sm text-gray-500">{{ i18n.t('home.ai_matching') }}</p>
+        </div>
+    </div>
+</div>
+
+<!-- Opportunity Feed -->
+<div class="mb-6 flex justify-between items-center">
+    <h2 class="text-2xl font-bold text-gray-900">
+        <i class="fas fa-fire text-orange-500 mr-2"></i>{{ i18n.t('home.latest') }}
+    </h2>
+    <div class="flex gap-2">
+        <a href="?page=1" class="px-3 py-1 text-sm rounded-full {% if not source_filter %}bg-indigo-100 text-indigo-700{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">All</a>
+        <a href="/search?source=scholar" class="px-3 py-1 text-sm rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200">Scholar</a>
+        <a href="/search?source=linkedin" class="px-3 py-1 text-sm rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200">LinkedIn</a>
+        <a href="/search?source=xiaohongshu" class="px-3 py-1 text-sm rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200">小红书</a>
+    </div>
+</div>
+
+{% if opportunities %}
+<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+    {% for opp in opportunities %}
+    <div class="bg-white shadow-sm overflow-hidden rounded-lg border border-gray-200 hover:border-indigo-300 hover:shadow-md transition flex flex-col h-full">
+        <!-- Card Header -->
+        <div class="px-4 py-4 border-b border-gray-100">
+            <div class="flex justify-between items-start">
+                <div class="flex-1 min-w-0">
+                    <h3 class="text-lg font-semibold text-gray-900 truncate">
+                        <a href="/opportunity/{{ opp.id }}" class="hover:text-indigo-600">
+                            {{ opp.title[:60] }}{% if opp.title|length > 60 %}...{% endif %}
+                        </a>
+                    </h3>
+                    <p class="mt-1 text-sm text-gray-500 truncate">
+                        {% if opp.professor_name %}{{ opp.professor_name }} · {% endif %}{{ opp.university or 'Unknown' }}
+                    </p>
+                </div>
+                {% if opp.quality_score and opp.quality_score > 80 %}
+                <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                    <i class="fas fa-star text-yellow-500 mr-1"></i>{{ '优质' if i18n.is_zh() else 'Top Pick' }}
+                </span>
+                {% elif opp.personalized_score and opp.personalized_score > 0.7 %}
+                <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                    <i class="fas fa-thumbs-up mr-1"></i>{{ '为你推荐' if i18n.is_zh() else 'For You' }}
+                </span>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Card Body -->
+        <div class="px-4 py-3 flex-grow">
+            <p class="text-sm text-gray-600 line-clamp-3">
+                {{ opp.description[:200] }}{% if opp.description|length > 200 %}...{% endif %}
+            </p>
+            
+            <!-- Hiring Signals -->
+            {% if opp.hiring_signals_list %}
+            <div class="mt-3 flex flex-wrap gap-1">
+                {% for signal in opp.hiring_signals_list[:2] %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700">
+                    {{ signal[:30] }}{% if signal|length > 30 %}...{% endif %}
+                </span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        
+        <!-- Card Footer -->
+        <div class="px-4 py-3 bg-gray-50 border-t border-gray-100 mt-auto">
+            <div class="flex justify-between items-center">
+                <span class="text-xs text-gray-400">
+                    <i class="fas fa-tag mr-1"></i>{{ opp.source_type }}
+                </span>
+                <div class="flex gap-2 items-center">
+                    <!-- Save Button -->
+                    {% if user %}
+                    <button onclick="toggleSave('{{ opp.id }}', this)" 
+                            class="save-btn p-1.5 rounded hover:bg-gray-200 transition {% if opp.is_saved %}text-yellow-500{% else %}text-gray-400{% endif %}"
+                            data-saved="{{ 'true' if opp.is_saved else 'false' }}">
+                        <i class="{% if opp.is_saved %}fas{% else %}far{% endif %} fa-bookmark"></i>
+                    </button>
+                    {% endif %}
+                    
+                    {% if opp.has_direct_apply and opp.direct_apply_link %}
+                    <a href="{{ opp.direct_apply_link }}" target="_blank" 
+                       class="inline-flex items-center px-2 py-1 text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700">
+                        <i class="fas fa-external-link-alt mr-1"></i> {{ i18n.t('home.apply') }}
+                    </a>
+                    {% endif %}
+                    <a href="/opportunity/{{ opp.id }}" 
+                       class="inline-flex items-center px-2 py-1 text-xs font-medium rounded text-indigo-600 bg-indigo-50 hover:bg-indigo-100">
+                        {{ i18n.t('home.details') }} <i class="fas fa-arrow-right ml-1"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div class="mt-8 flex justify-center">
+    <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+        {% if has_prev %}
+        <a href="?page={{ current_page - 1 }}" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+            <i class="fas fa-chevron-left"></i>
+        </a>
+        {% endif %}
+        
+        <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+            {{ i18n.t('common.page', current=current_page, total=total_pages) }}
+        </span>
+        
+        {% if has_next %}
+        <a href="?page={{ current_page + 1 }}" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+            <i class="fas fa-chevron-right"></i>
+        </a>
+        {% endif %}
+    </nav>
+</div>
+{% endif %}
+
+{% else %}
+<!-- Empty State -->
+<div class="text-center py-16">
+    <div class="text-6xl text-gray-300 mb-4">
+        <i class="fas fa-inbox"></i>
+    </div>
+    <h3 class="text-lg font-medium text-gray-900 mb-2">{{ i18n.t('home.no_opportunities') }}</h3>
+    <p class="text-gray-500 mb-6">{{ i18n.t('site.description') }}</p>
+    <div class="flex justify-center gap-4">
+        <a href="/search?q=machine+learning" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+            <i class="fas fa-search mr-2"></i> {{ i18n.t('home.try_search') }}
+        </a>
+        <button onclick="triggerCollection()" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+            <i class="fas fa-sync mr-2"></i> {{ i18n.t('home.collect_data') }}
+        </button>
+    </div>
+</div>
+
+<script>
+async function triggerCollection() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> {{ i18n.t("common.loading") }}';
+    
+    try {
+        const response = await fetch('/api/collect', { method: 'POST' });
+        const data = await response.json();
+        alert(`{{ i18n.t("common.success") }}! Added ${data.total_new} new opportunities.`);
+        location.reload();
+    } catch (e) {
+        alert('{{ i18n.t("common.error") }}');
+    }
+    
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-sync mr-2"></i> {{ i18n.t("home.collect_data") }}';
+}
+</script>
+{% endif %}
+
+<!-- Feature Cards -->
 <div class="mt-16 grid grid-cols-1 gap-8 md:grid-cols-3">
     <div class="bg-white overflow-hidden shadow rounded-lg p-6">
         <div class="text-indigo-600 mb-4 text-3xl"><i class="fas fa-robot"></i></div>
-        <h3 class="text-lg font-medium text-gray-900">AI Matching</h3>
-        <p class="mt-2 text-gray-500">Our SPECTER-based model matches your CV with professor's citation graphs for high-precision alignment.</p>
+        <h3 class="text-lg font-medium text-gray-900">{{ i18n.t('feature.ai_title') }}</h3>
+        <p class="mt-2 text-gray-500">{{ i18n.t('feature.ai_desc') }}</p>
     </div>
     <div class="bg-white overflow-hidden shadow rounded-lg p-6">
         <div class="text-indigo-600 mb-4 text-3xl"><i class="fas fa-globe-asia"></i></div>
-        <h3 class="text-lg font-medium text-gray-900">Global Coverage</h3>
-        <p class="mt-2 text-gray-500">Aggregating opportunities from University sites, Google Scholar, and social platforms.</p>
+        <h3 class="text-lg font-medium text-gray-900">{{ i18n.t('feature.global_title') }}</h3>
+        <p class="mt-2 text-gray-500">{{ i18n.t('feature.global_desc') }}</p>
     </div>
     <div class="bg-white overflow-hidden shadow rounded-lg p-6">
-        <div class="text-indigo-600 mb-4 text-3xl"><i class="fas fa-users"></i></div>
-        <h3 class="text-lg font-medium text-gray-900">Community Driven</h3>
-        <p class="mt-2 text-gray-500">Access interview timelines, SOP examples, and connect with peers for collaborative research.</p>
+        <div class="text-indigo-600 mb-4 text-3xl"><i class="fas fa-envelope-open-text"></i></div>
+        <h3 class="text-lg font-medium text-gray-900">{{ i18n.t('feature.email_title') }}</h3>
+        <p class="mt-2 text-gray-500">{{ i18n.t('feature.email_desc') }}</p>
     </div>
 </div>
+
+<!-- Save Toggle Script -->
+<script>
+async function toggleSave(oppId, btn) {
+    const isSaved = btn.dataset.saved === 'true';
+    const method = isSaved ? 'DELETE' : 'POST';
+    
+    try {
+        const response = await fetch(`/api/save/${oppId}`, { method });
+        if (response.ok) {
+            // Toggle state
+            btn.dataset.saved = isSaved ? 'false' : 'true';
+            const icon = btn.querySelector('i');
+            if (isSaved) {
+                icon.classList.remove('fas');
+                icon.classList.add('far');
+                btn.classList.remove('text-yellow-500');
+                btn.classList.add('text-gray-400');
+            } else {
+                icon.classList.remove('far');
+                icon.classList.add('fas');
+                btn.classList.remove('text-gray-400');
+                btn.classList.add('text-yellow-500');
+            }
+        } else if (response.status === 401) {
+            window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+        }
+    } catch (e) {
+        console.error('Save failed:', e);
+    }
+}
+</script>
 {% endblock %}

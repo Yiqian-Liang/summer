@@ -28,17 +28,17 @@ class RAGWorkbench:
             }
         }
 
-    def generate_context_aware_draft(self, student_profile: Dict, professor_profile: Dict) -> Dict:
+    def generate_context_aware_draft(self, student_profile: Dict, professor_profile: Dict, include_social_media: bool = False) -> Dict:
         """
         Generates a draft. If API key is present, uses Gemini for 'Deep Drafting'.
         Otherwise falls back to 'Template Drafting'.
         """
         if self.gemini_api_key:
-            return self._generate_with_gemini(student_profile, professor_profile)
+            return self._generate_with_gemini(student_profile, professor_profile, include_social_media)
         else:
             return self._generate_with_template(student_profile, professor_profile)
 
-    def _generate_with_gemini(self, student_profile: Dict, professor_profile: Dict) -> Dict:
+    def _generate_with_gemini(self, student_profile: Dict, professor_profile: Dict, include_social_media: bool = False) -> Dict:
         """
         Uses Gemini 2.0 Flash to generate a highly personalized email.
         It performs 'Online Reasoning' if the model supports tool use (simulated here via prompt).
@@ -47,6 +47,16 @@ class RAGWorkbench:
         paper_context = professor_profile.get('snippet', '')
         student_interest = student_profile.get('interest', '')
         
+        social_prompt = ""
+        if include_social_media:
+            social_prompt = f"""
+            5. [SOCIAL MEDIA DISCOVERY]: 
+               - Use Google Search to find {prof_name}'s public posts on Instagram (site:instagram.com) or WeChat articles (site:weixin.qq.com).
+               - Look for: Recent lab photos, conference trips, or informal thoughts on research.
+               - If found, subtly mention it (e.g., "I saw your recent post about [Topic] on WeChat...") to show you did your homework.
+               - If nothing relevant/professional is found, IGNORE this step.
+            """
+
         prompt = f"""
         You are an expert academic mentor. Write a cold email for a student named {student_profile.get('name')} 
         interested in '{student_interest}' to Prof. {prof_name}.
@@ -58,6 +68,7 @@ class RAGWorkbench:
         2. Reference the specific context provided.
         3. Do NOT sound like ChatGPT. Sound like a serious undergraduate researcher.
         4. Return output as JSON with 'subject' and 'body' fields.
+        {social_prompt}
         """
         
         try:
