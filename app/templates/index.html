@@ -61,7 +61,7 @@
     <div class="flex flex-wrap justify-center gap-8 text-center">
         <div>
             <span class="text-2xl font-bold text-indigo-600">{{ total_count }}</span>
-            <p class="text-sm text-gray-500">{{ i18n.t('home.opportunities') }}</p>
+            <p class="text-sm text-gray-500">{{ '当前可见机会' if i18n.is_zh() else 'Visible opportunities' }}</p>
         </div>
         <div>
             <a href="/search" class="text-xl font-bold text-green-700">{{ '跨来源筛选' if i18n.is_zh() else 'Search across sources' }}</a>
@@ -77,14 +77,26 @@
 <!-- Opportunity Feed -->
 <div class="mb-6 flex justify-between items-center">
     <h2 class="text-2xl font-bold text-gray-900">
-        <i class="fas fa-fire text-orange-500 mr-2"></i>{{ i18n.t('home.latest') }}
+        <i class="fas fa-fire text-orange-500 mr-2"></i>{{ '研究机会' if i18n.is_zh() else 'Research opportunities' }}
     </h2>
     <div class="flex gap-2">
-        <a href="?page=1" class="px-3 py-1 text-sm rounded-full {% if not source_filter %}bg-indigo-100 text-indigo-700{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">All</a>
+        <a href="?feed={{ feed|default('personal') }}&page=1" class="px-3 py-1 text-sm rounded-full {% if not source_filter %}bg-indigo-100 text-indigo-700{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">All</a>
         <a href="/search?source=scholar" class="px-3 py-1 text-sm rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200">Scholar</a>
         <a href="/search?source=linkedin" class="px-3 py-1 text-sm rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200">LinkedIn</a>
         <a href="/search?source=xiaohongshu" class="px-3 py-1 text-sm rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200">小红书</a>
     </div>
+</div>
+
+<div class="mb-5 space-y-3">
+    <div class="flex flex-wrap gap-3"><a href="/?feed=personal" class="rounded-md border px-4 py-2 {{ 'bg-indigo-600 text-white' if feed != 'latest' else 'bg-white' }}">{{ '为你推荐' if i18n.is_zh() else 'For you' }}</a><a href="/?feed=latest" class="rounded-md border px-4 py-2 {{ 'bg-indigo-600 text-white' if feed == 'latest' else 'bg-white' }}">{{ '按发布时间' if i18n.is_zh() else 'By publication date' }}</a></div>
+    <p class="text-sm text-gray-600">{% if feed == 'latest' %}{{ '按原文已知发布时间排序，未注明发布时间的机会排在后面。此排序不使用个人信息。' if i18n.is_zh() else 'Ordered by known publication dates; undated postings follow. This order uses no personal information.' }}{% else %}{{ '先核对是否仍在招募，再结合简历、主动选择的偏好和收藏排序；少量参考近期浏览与搜索。相近机会会适当分散来源。' if i18n.is_zh() else 'We check recruitment status first, then use your resume, chosen preferences and bookmarks, with a smaller contribution from recent browsing and searches. Similar opportunities are spread across sources.' }}{% endif %}</p>
+    {% if user %}<details class="rounded-lg border bg-white p-3 text-sm"><summary class="cursor-pointer font-medium">{{ '管理我的推荐' if i18n.is_zh() else 'Manage my recommendations' }}</summary><div class="mt-3 flex flex-wrap gap-4 items-center">
+        <label class="flex gap-2 items-center"><input id="recommendationLearning" type="checkbox" {% if learning_enabled %}checked{% endif %}>{{ '使用我的浏览与搜索记录' if i18n.is_zh() else 'Use my browsing and searches' }}</label>
+        <button type="button" data-recommendation-action="clear_history" class="underline">{{ '清除浏览与搜索影响' if i18n.is_zh() else 'Clear browsing and search history' }}</button>
+        {% if hidden_count %}<button type="button" data-recommendation-action="restore" class="underline">{{ '恢复隐藏机会' if i18n.is_zh() else 'Restore hidden opportunities' }} ({{ hidden_count }})</button>{% endif %}
+        <a href="/onboarding" class="underline">{{ '修改偏好' if i18n.is_zh() else 'Edit preferences' }}</a>
+    </div><p class="text-gray-500 mt-3">{{ '近期记录最多使用 90 天，重复点击不会持续加权。关闭后不再记录或使用浏览与搜索；已有记录保留，可单独清除。简历与收藏仍保留。不感兴趣只隐藏首页里的该机会。' if i18n.is_zh() else 'We use up to 90 days of activity without repeatedly boosting the same clicks. Switching off stops recording and using browsing/searches; stored history remains until cleared. Resumes and bookmarks remain. Not interested hides that opportunity from this feed.' }}</p></details>{% endif %}
+    <p id="recommendationStatus" role="status" aria-live="polite" class="text-sm text-red-700"></p>
 </div>
 
 {% if opportunities %}
@@ -161,6 +173,12 @@
             {% endif %}
 
             <!-- Tags -->
+            {% if opp.recommendation_reasons %}
+            <details class="bg-indigo-50 rounded-md p-2 mb-3 text-xs text-indigo-900"><summary class="cursor-pointer font-medium">{{ '为什么推荐' if i18n.is_zh() else 'Why this opportunity' }}</summary>
+                {% set reason_labels = {'resume': ['简历中的共同内容', 'Shared resume topics'], 'preferences': ['你选择的研究方向', 'Your chosen research topics'], 'goals': ['与你选择的申请偏好相关', 'Related to your chosen application preferences'], 'saved': ['与你收藏的机会有共同内容', 'Topics shared with your bookmarks'], 'browsed': ['与你近期浏览的机会有共同内容', 'Topics shared with recently viewed opportunities'], 'search': ['与近期搜索相关', 'Related to recent searches'], 'discovery': ['供你发现：结合来源与发布时间排序，适合程度尚待核对', 'For discovery: ordered using source and publication date; personal fit still needs checking']} %}
+                {% for reason in opp.recommendation_reasons %}<p class="mt-2">{{ reason_labels[reason.kind][0 if i18n.is_zh() else 1] }}{% if reason.terms %}：{{ reason.terms|join('、') }}{% endif %}</p>{% endfor %}
+            </details>
+            {% endif %}
             {% if opp.tags %}
             <div class="flex flex-wrap gap-1 mb-2">
                 {% for tag in opp.tags[:5] %}
@@ -190,6 +208,7 @@
         </div>
         
         <!-- Card Footer: Actions -->
+        {% if user %}<button type="button" data-recommendation-action="hide" data-opportunity="{{ opp.id }}" class="text-xs text-gray-500 hover:text-gray-900 text-left px-4 pb-2">{{ '不感兴趣' if i18n.is_zh() else 'Not interested' }}</button>{% endif %}
         <div class="px-4 py-2 bg-gray-50 border-t border-gray-100 mt-auto">
             <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
                 <!-- Quick Links -->
@@ -250,7 +269,7 @@
 <div class="mt-8 flex justify-center">
     <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
         {% if has_prev %}
-        <a href="?page={{ current_page - 1 }}" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+        <a href="?feed={{ feed|default('personal') }}&page={{ current_page - 1 }}" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
             <i class="fas fa-chevron-left"></i>
         </a>
         {% endif %}
@@ -260,7 +279,7 @@
         </span>
         
         {% if has_next %}
-        <a href="?page={{ current_page + 1 }}" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+        <a href="?feed={{ feed|default('personal') }}&page={{ current_page + 1 }}" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
             <i class="fas fa-chevron-right"></i>
         </a>
         {% endif %}
@@ -275,14 +294,14 @@
         <i class="fas fa-inbox"></i>
     </div>
     <h3 class="text-lg font-medium text-gray-900 mb-2">{{ i18n.t('home.no_opportunities') }}</h3>
-    <p class="text-gray-500 mb-6">{{ i18n.t('site.description') }}</p>
+    <p class="text-gray-500 mb-6">{{ ('可在“管理我的推荐”中恢复隐藏机会，或继续按关键词搜索。' if i18n.is_zh() else 'Restore hidden opportunities in recommendation settings, or search by keyword.') if hidden_count else ('可以尝试按研究方向搜索更多来源。' if i18n.is_zh() else 'Try searching more sources by research topic.') }}</p>
     <div class="flex justify-center gap-4">
         <a href="/search?q=machine+learning" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
             <i class="fas fa-search mr-2"></i> {{ i18n.t('home.try_search') }}
         </a>
-        <button onclick="triggerCollection()" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+        {% if not hidden_count %}<button onclick="triggerCollection()" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
             <i class="fas fa-sync mr-2"></i> {{ i18n.t('home.collect_data') }}
-        </button>
+        </button>{% endif %}
     </div>
 </div>
 
@@ -327,13 +346,14 @@ async function triggerCollection() {
 </div>
 
 <!-- Save Toggle Script -->
+{% if user %}<script id="recommendationBootstrap" type="application/json">{{ {'zh': i18n.is_zh()}|tojson }}</script><script src="/static/recommendations.js" defer></script>{% endif %}
 <script>
 async function toggleSave(oppId, btn) {
     const isSaved = btn.dataset.saved === 'true';
     const method = isSaved ? 'DELETE' : 'POST';
     
     try {
-        const response = await fetch(`/api/save/${oppId}`, { method });
+        const response = await fetch(`/api/save/${encodeURIComponent(oppId)}`, { method, headers: {'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content} });
         if (response.ok) {
             // Toggle state
             btn.dataset.saved = isSaved ? 'false' : 'true';

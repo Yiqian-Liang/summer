@@ -601,7 +601,7 @@ async function toggleSave(oppId, btn) {
     const method = isSaved ? 'DELETE' : 'POST';
     
     try {
-        const response = await fetch(`/api/save/${oppId}`, { method });
+        const response = await fetch(`/api/save/${encodeURIComponent(oppId)}`, { method, headers: {'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content} });
         if (response.ok) {
             btn.dataset.saved = isSaved ? 'false' : 'true';
             const icon = btn.querySelector('i');

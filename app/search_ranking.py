@@ -205,6 +205,25 @@ def _concept_evidence(candidate: Dict, concept: List[str]) -> Tuple[float, Optio
     return best
 
 
+def is_available_opportunity(candidate: Dict, source_filter=None, include_expired=False, now=None) -> bool:
+    """Shared publication, recruitment, source and deadline checks for search and feeds."""
+    now = now or dt.datetime.now(tz=dt.timezone.utc)
+    if candidate.get("provider") == "user_post" and (candidate.get("post_status") != "published" or candidate.get("post_kind", "recruitment") not in (None, "recruitment")):
+        return False
+    source_filter = normalize_source_filter(source_filter)
+    source_type = normalize_source_filter(candidate.get("source_type")) or detect_source_type(
+        candidate.get("source", ""), candidate.get("source_url") or candidate.get("url") or candidate.get("link") or "")
+    terms = _matched_opportunity_terms(_candidate_haystack(candidate))
+    informational = source_filter in INFORMATIONAL_FILTERS
+    return not (
+        (source_filter and source_type != source_filter)
+        or (source_type == "scholar" and source_filter != "scholar")
+        or _profile_only(candidate, terms)
+        or (not informational and not terms and candidate.get("provider") != "user_post" and candidate.get("has_direct_apply") not in (True, 1, "1"))
+        or (not informational and not include_expired and _deadline_is_expired(candidate, now))
+    )
+
+
 def score_search_result(
     query: str,
     candidate: Dict,
@@ -214,40 +233,21 @@ def score_search_result(
 ) -> Optional[Dict]:
     """Score one candidate, returning None when it is not a valid result."""
     now = now or dt.datetime.now(tz=dt.timezone.utc)
-    if candidate.get("provider") == "user_post" and (candidate.get("post_status") != "published" or candidate.get("post_kind", "recruitment") not in (None, "recruitment")):
-        return None
     if now.tzinfo is None:
         now = now.replace(tzinfo=dt.timezone.utc)
     concepts = build_query_concepts(query)
-    if not concepts:
+    if not concepts or not is_available_opportunity(candidate, source_filter, include_expired, now):
         return None
-
     evidence = [_concept_evidence(candidate, concept) for concept in concepts]
     if any(item[0] <= 0 for item in evidence):
         return None
-
     haystack = _candidate_haystack(candidate)
     opportunity_terms = _matched_opportunity_terms(haystack)
-    # A member explicitly publishing in recruitment is an opportunity signal.
     if candidate.get("provider") == "user_post":
         opportunity_terms.append("community recruitment")
-    source_filter = normalize_source_filter(source_filter)
     source_type = normalize_source_filter(candidate.get("source_type")) or detect_source_type(
-        candidate.get("source", ""), candidate.get("source_url") or candidate.get("url") or candidate.get("link") or ""
-    )
-    if source_filter and source_type != source_filter:
-        return None
-    informational_mode = source_filter in INFORMATIONAL_FILTERS
-    if source_type == "scholar" and source_filter != "scholar":
-        return None
-    if _profile_only(candidate, opportunity_terms):
-        return None
-    if not informational_mode and not opportunity_terms and candidate.get("has_direct_apply") not in (True, 1, "1"):
-        return None
-
+        candidate.get("source", ""), candidate.get("source_url") or candidate.get("url") or candidate.get("link") or "")
     expired = _deadline_is_expired(candidate, now)
-    if expired and not include_expired and not informational_mode:
-        return None
 
     matched_terms = []
     matched_fields = []

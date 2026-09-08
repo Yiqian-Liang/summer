@@ -443,6 +443,12 @@ def init_user_tables():
         db["user_saved"].create_index(["user_id", "opportunity_id"], unique=True)
         logger.info("Created 'user_saved' table.")
 
+    db.execute("""CREATE TABLE IF NOT EXISTS recommendation_settings (
+        user_id INTEGER PRIMARY KEY, use_behavior INTEGER NOT NULL DEFAULT 1
+    )""")
+    db.execute("CREATE INDEX IF NOT EXISTS behavior_recent ON user_behaviors(user_id, action_type, created_at)")
+    db.conn.commit()
+
 
 def create_user(email: str, username: str, password_hash: str) -> Optional[int]:
     """Create a new user. Returns user_id or None if failed."""
@@ -519,16 +525,65 @@ def get_user_profile(user_id: int) -> Optional[Dict]:
 
 def record_user_behavior(user_id: int, action_type: str, target_id: str, 
                          target_type: str, metadata: Dict = None):
-    """Record a user behavior for recommendations."""
+    """Store bounded, recent interest signals; explicit bookmarks live in user_saved."""
+    if action_type not in {"search", "click"} or not target_id or len(target_id) > 300:
+        return
     db = get_db()
-    db["user_behaviors"].insert({
-        "user_id": user_id,
-        "action_type": action_type,
-        "target_id": target_id,
-        "target_type": target_type,
-        "metadata": json.dumps(metadata or {}),
-        "created_at": datetime.now().isoformat(),
-    })
+    now = datetime.utcnow()
+    try:
+        with db.conn:
+            db.execute("BEGIN IMMEDIATE")
+            setting = list(db.query("SELECT use_behavior FROM recommendation_settings WHERE user_id = ?", [user_id]))
+            if setting and not setting[0]["use_behavior"]:
+                return
+            exists = list(db.query("""SELECT 1 FROM user_behaviors WHERE user_id = ? AND action_type = ?
+                AND target_id = ? AND created_at >= ? LIMIT 1""", [user_id, action_type, target_id, now.date().isoformat()]))
+            if exists:
+                return
+            db["user_behaviors"].insert({"user_id": user_id, "action_type": action_type, "target_id": target_id,
+                "target_type": target_type, "metadata": "{}", "created_at": now.isoformat()})
+            db.execute("""DELETE FROM user_behaviors WHERE user_id = ? AND action_type IN ('search', 'click')
+                AND (created_at < ? OR id NOT IN (SELECT id FROM user_behaviors WHERE user_id = ?
+                AND action_type IN ('search', 'click') ORDER BY created_at DESC, id DESC LIMIT 200))""",
+                [user_id, (now - timedelta(days=90)).isoformat(), user_id])
+    finally:
+        db.conn.close()
+
+
+def get_recommendation_state(user_id: int) -> Dict:
+    db = get_db()
+    try:
+        settings = list(db.query("SELECT use_behavior FROM recommendation_settings WHERE user_id = ?", [user_id]))
+        enabled = bool(settings[0]["use_behavior"]) if settings else True
+        history = list(db.query("""SELECT action_type, target_id, created_at FROM user_behaviors
+            WHERE user_id = ? AND action_type IN ('click', 'search') AND created_at >= ?
+            ORDER BY created_at DESC, id DESC LIMIT 100""", [user_id, (datetime.utcnow() - timedelta(days=90)).isoformat()])) if enabled else []
+        hidden = [row["target_id"] for row in db.query("SELECT DISTINCT target_id FROM user_behaviors WHERE user_id = ? AND action_type = 'hide'", [user_id])]
+        saved = list(db.query("SELECT opportunity_id, created_at FROM user_saved WHERE user_id = ? ORDER BY created_at DESC, id DESC", [user_id]))
+        return {"use_behavior": enabled, "behaviors": history, "saved": saved, "hidden": hidden}
+    finally:
+        db.conn.close()
+
+
+def update_recommendation_feedback(user_id: int, action: str, opportunity_id=None, enabled=None):
+    db = get_db()
+    try:
+        with db.conn:
+            db.execute("BEGIN IMMEDIATE")
+            if action == "set_learning":
+                db.execute("""INSERT INTO recommendation_settings(user_id, use_behavior) VALUES (?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET use_behavior = excluded.use_behavior""", [user_id, int(enabled)])
+            elif action == "clear_history":
+                db.execute("DELETE FROM user_behaviors WHERE user_id = ? AND action_type IN ('search', 'click')", [user_id])
+            elif action == "restore":
+                db.execute("DELETE FROM user_behaviors WHERE user_id = ? AND action_type = 'hide'", [user_id])
+            elif action in {"hide", "unhide"}:
+                db.execute("DELETE FROM user_behaviors WHERE user_id = ? AND action_type = 'hide' AND target_id = ?", [user_id, opportunity_id])
+                if action == "hide":
+                    db["user_behaviors"].insert({"user_id": user_id, "action_type": "hide", "target_id": opportunity_id,
+                        "target_type": "opportunity", "metadata": "{}", "created_at": datetime.utcnow().isoformat()})
+    finally:
+        db.conn.close()
 
 
 def get_user_behaviors(user_id: int, action_type: str = None, limit: int = 100) -> List[Dict]:
@@ -571,11 +626,14 @@ def unsave_opportunity(user_id: int, opportunity_id: str) -> bool:
     """Remove a saved opportunity."""
     db = get_db()
     try:
-        db["user_saved"].delete_where("user_id = ? AND opportunity_id = ?", [user_id, opportunity_id])
+        with db.conn:
+            db["user_saved"].delete_where("user_id = ? AND opportunity_id = ?", [user_id, opportunity_id])
         return True
     except Exception as e:
         logger.error(f"Error unsaving opportunity: {e}")
         return False
+    finally:
+        db.conn.close()
 
 
 def get_user_saved(user_id: int) -> List[Dict]:

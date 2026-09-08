@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.auth import csrf_token_for, get_current_user, require_csrf, require_user, validate_email
-from app.database import get_db
+from app.database import get_db, record_user_behavior
 from app.i18n import DEFAULT_LANGUAGE, I18n, LANGUAGES
 
 router = APIRouter()
@@ -289,6 +289,8 @@ def post_detail_page(request: Request, post_id: str, page: int = Query(1, ge=1, 
     from app.resumes import get_resume, match_resume
     user = get_current_user(request.cookies.get("session_token"))
     resume = get_resume(user["id"], active_only=True) if user else None
+    if user and post.get("post_status") == "published" and post.get("post_kind") == "recruitment":
+        record_user_behavior(user["id"], "click", post_id, "opportunity")
     if resume and post.get("post_kind") == "recruitment":
         post["resume_match"] = match_resume(post, resume)
     return templates.TemplateResponse("post_detail.html", _context(

@@ -47,7 +47,7 @@ class SearchRoutesTest(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertEqual([r["id"] for r in page.context["results"]], [r["id"] for r in api["results"]])
         self.assertEqual(len(self.client.get("/?page=2").context["opportunities"]), 20)
-        with patch.object(main, "get_current_user_from_request", return_value={"id": 1}), patch.object(main, "get_user_profile", return_value={"majors": "[]"}), patch.object(main, "get_user_behaviors", return_value=[]), patch.object(main, "record_user_behavior"), patch.object(main, "is_opportunity_saved", return_value=False):
+        with patch.object(main, "get_current_user_from_request", return_value={"id": 1}), patch.object(main, "get_user_profile", return_value={"majors": "[]"}), patch.object(main, "get_recommendation_state", return_value={"use_behavior": True, "behaviors": [], "saved": [], "hidden": []}):
             home = self.client.get("/?page=11")
             self.assertEqual(home.context["total_count"], 215)
             self.assertEqual(len(home.context["opportunities"]), 15)

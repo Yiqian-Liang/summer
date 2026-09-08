@@ -16,7 +16,7 @@ import uvicorn
 from typing import Optional, Dict, List
 from collections import Counter
 from typing import Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, StrictBool
 import os
 import datetime
 import json
@@ -37,7 +37,7 @@ from app.database import (
     # User management
     init_user_tables, create_user, get_user_by_email, get_user_by_username,
     get_user_by_id, update_user_last_login, save_user_profile, get_user_profile,
-    record_user_behavior, get_user_behaviors, save_opportunity as db_save_opportunity,
+    record_user_behavior, save_opportunity as db_save_opportunity,
     unsave_opportunity, get_user_saved, is_opportunity_saved,
     # Password reset
     create_password_reset_token, verify_reset_token, use_reset_token, update_user_password
@@ -62,6 +62,7 @@ from app.mail_service import init_mail_tables
 from app.mail_oauth import router as mail_oauth_router
 from app.posts import router as posts_router, init_post_tables
 from app.resumes import router as resume_router, init_resume_table, get_resume, rank_by_resume, match_resume
+from app.database import get_recommendation_state, update_recommendation_feedback
 
 app = FastAPI(title="Summer Research Platform")
 app.include_router(mail_router)
@@ -72,6 +73,7 @@ app.include_router(resume_router)
 
 @app.middleware("http")
 async def private_workspace_headers(request: Request, call_next):
+    request.state.csrf_token = csrf_token_for(request)
     response = await call_next(request)
     if request.cookies.get("session_token") or request.url.path in {"/mail", "/resume", "/api/generate-rag-draft", "/posts/mine", "/posts/new"} or request.url.path.startswith(("/api/mail", "/api/resume")) or request.url.path.endswith("/edit"):
         response.headers["Cache-Control"] = "no-store"
@@ -673,7 +675,7 @@ async def onboarding_submit(request: Request):
 # ============== Page Routes ==============
 
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request, page: int = Query(1, ge=1)):
+async def home(request: Request, page: int = Query(1, ge=1), feed: Literal["personal", "latest"] = Query("personal")):
     """
     Home page with opportunity feed.
     Shows personalized opportunities based on user preferences.
@@ -681,7 +683,7 @@ async def home(request: Request, page: int = Query(1, ge=1)):
     user = get_current_user_from_request(request)
     resume = get_resume(user["id"], active_only=True) if user else None
     profile = None
-    behaviors = None
+    state = {"use_behavior": False, "behaviors": [], "saved": [], "hidden": []}
     recommended_searches = []
     
     limit = 20
@@ -690,19 +692,20 @@ async def home(request: Request, page: int = Query(1, ge=1)):
     # If user is logged in, get their profile for personalization
     if user:
         profile = get_user_profile(user["id"])
-        behaviors = get_user_behaviors(user["id"], limit=50)
-        
-        # Record page view behavior
-        record_user_behavior(user["id"], "view", "home", "page")
+        state = get_recommendation_state(user["id"])
         
     total_count = get_opportunity_count()
     opportunities = get_opportunities(
-        limit=total_count if profile else limit,
-        offset=0 if profile else offset,
+        limit=total_count,
+        offset=0,
         order_by="quality_score desc, updated_at desc, id",
     )
-    if profile:
-        opportunities = recommender.rank_opportunities(opportunities, profile, behaviors)[offset:offset + limit]
+    ranked = await run_in_threadpool(recommender.rank_opportunities, opportunities, profile,
+        state["behaviors"], resume, state["saved"], state["hidden"], feed == "personal")
+    total_count = len(ranked)
+    opportunities = ranked[offset:offset + limit]
+    saved_ids = {item["opportunity_id"] for item in state["saved"]}
+    if profile and feed == "personal":
         recommended_searches = recommender.get_recommended_searches(profile)
     
     # Parse hiring_signals JSON and generate tags for template
@@ -735,10 +738,7 @@ async def home(request: Request, page: int = Query(1, ge=1)):
             )
 
         # Check if saved by user
-        if user:
-            opp["is_saved"] = is_opportunity_saved(user["id"], opp["id"])
-        else:
-            opp["is_saved"] = False
+        opp["is_saved"] = opp["id"] in saved_ids
     
     total_pages = (total_count + limit - 1) // limit if total_count > 0 else 1
     i18n = get_i18n(request)
@@ -748,6 +748,9 @@ async def home(request: Request, page: int = Query(1, ge=1)):
         "user": user,
         "profile": profile,
         "has_resume": bool(resume),
+        "feed": feed,
+        "learning_enabled": state["use_behavior"],
+        "hidden_count": len(state["hidden"]),
         "opportunities": opportunities,
         "recommended_searches": recommended_searches,
         "total_count": total_count,
@@ -1138,28 +1141,46 @@ async def source_preview_api(opp_id: str):
 
 # ============== User API Routes ==============
 
+class RecommendationFeedback(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["hide", "unhide", "restore", "set_learning", "clear_history"]
+    opportunity_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    enabled: Optional[StrictBool] = None
+
+
+@app.post("/api/recommendations/feedback")
+async def recommendation_feedback(request: Request, payload: RecommendationFeedback):
+    user = require_csrf(request)
+    if payload.action in {"hide", "unhide"}:
+        if not payload.opportunity_id or payload.enabled is not None:
+            raise HTTPException(422, "请选择要隐藏或恢复的机会。")
+        if payload.action == "hide" and not get_opportunity_by_id(payload.opportunity_id):
+            raise HTTPException(404, "机会已不存在或尚未公开。")
+    elif payload.action == "set_learning":
+        if payload.enabled is None or payload.opportunity_id is not None:
+            raise HTTPException(422, "请选择是否使用浏览与搜索记录。")
+    elif payload.opportunity_id is not None or payload.enabled is not None:
+        raise HTTPException(422, "不支持的反馈参数。")
+    update_recommendation_feedback(user["id"], payload.action, payload.opportunity_id, payload.enabled)
+    state = get_recommendation_state(user["id"])
+    return {"success": True, "use_behavior": state["use_behavior"], "hidden_count": len(state["hidden"])}
+
+
 @app.post("/api/save/{opportunity_id}")
 async def save_opportunity_api(request: Request, opportunity_id: str):
     """Save/bookmark an opportunity."""
-    user = get_current_user_from_request(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="请先登录")
-    
-    success = db_save_opportunity(user["id"], opportunity_id)
-    
-    # Record behavior
-    record_user_behavior(user["id"], "save", opportunity_id, "opportunity")
-    
+    user = require_csrf(request)
+    if not get_opportunity_by_id(opportunity_id):
+        raise HTTPException(404, "机会已不存在或尚未公开。")
+    success = is_opportunity_saved(user["id"], opportunity_id) or db_save_opportunity(user["id"], opportunity_id)
+
     return JSONResponse({"success": success})
 
 
 @app.delete("/api/save/{opportunity_id}")
 async def unsave_opportunity_api(request: Request, opportunity_id: str):
     """Remove a saved opportunity."""
-    user = get_current_user_from_request(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="请先登录")
-    
+    user = require_csrf(request)
     success = unsave_opportunity(user["id"], opportunity_id)
     return JSONResponse({"success": success})
 
@@ -1188,23 +1209,19 @@ async def get_saved_api(request: Request):
 @app.post("/api/track")
 async def track_behavior(
     request: Request,
-    action_type: str = Form(...),
-    target_id: str = Form(...),
-    target_type: str = Form(...),
-    metadata: str = Form("{}"),
+    action_type: Literal["search", "click"] = Form(...),
+    target_id: str = Form(..., min_length=1, max_length=300),
+    target_type: Literal["opportunity", "search"] = Form(...),
+    metadata: str = Form("{}", max_length=1000),
 ):
-    """Track user behavior for recommendations."""
-    user = get_current_user_from_request(request)
-    if not user:
-        return JSONResponse({"tracked": False})
-    
-    try:
-        meta = json.loads(metadata)
-    except:
-        meta = {}
-    
-    record_user_behavior(user["id"], action_type, target_id, target_type, meta)
-    return JSONResponse({"tracked": True})
+    """Only validated local browsing/search signals contribute to recommendations."""
+    user = require_csrf(request)
+    if target_type != ("opportunity" if action_type == "click" else "search"):
+        raise HTTPException(422, "行为类型与目标不符。")
+    if action_type == "click" and not get_opportunity_by_id(target_id):
+        raise HTTPException(404, "机会不存在或尚未公开。")
+    record_user_behavior(user["id"], action_type, target_id, target_type)
+    return JSONResponse({"tracked": get_recommendation_state(user["id"])["use_behavior"]})
 
 
 @app.get("/api/profile")

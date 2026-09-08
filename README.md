@@ -123,6 +123,14 @@ SITE_BASE_URL/mail/oauth/microsoft/callback
 
 网页与 API 均支持 `sort=resume`，需要本人登录且已启用简历。`/api/search?sort=resume` 不发起在线搜索；有 `q` 时先应用原有查询条件，再按个人匹配排序，分页和来源筛选保持一致。私有接口为 `GET/PUT/DELETE /api/resume` 和 `POST /api/resume/parse?filename=cv.pdf`（原始文件请求体）；写操作需要登录会话的 `X-CSRF-Token`，保存须携带当前版本的 `updated_at`，首次为 `null`。
 
+## 首页推荐算法
+
+首页“为你推荐”已接入本地内容与反馈排序：先检查是否仍在招募，结合已确认简历、主动选择的偏好、当前收藏及近期浏览/搜索，再在相近分数中分散机构与来源。推荐理由可展开查看，“按发布时间”可切换为不使用个人信息的排序。所有结果先完整排序再分页，不需要付费 AI。
+
+“管理我的推荐”支持关闭浏览/搜索记录、清除历史及恢复隐藏机会；“不感兴趣”只隐藏首页的对应项目。收藏权重大于单次浏览，重复访问去重，近期行为按时间减弱。个人数据不参与跨用户推荐或共享缓存。算法权重、限制、性能测量与后续协同过滤方案见 [推荐算法设计](outputs/recommendation-algorithm-2026-09-08.md)。
+
+反馈接口 `POST /api/recommendations/feedback` 支持 `hide/unhide`（`opportunity_id`）、`restore`、`clear_history`、`set_learning`（布尔 `enabled`）。反馈、收藏增删及 `/api/track` 写入需要本人的登录会话和 `X-CSRF-Token`；收藏记录是兴趣依据，客户端不再可以提交任意行为类型冒充申请结果。
+
 ## 搜索架构
 
 搜索分为三层：

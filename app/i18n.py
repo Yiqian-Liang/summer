@@ -52,16 +52,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "home.all_sources": {"zh": "所有来源", "en": "All Sources"},
     
     # Features
-    "feature.ai_title": {"zh": "AI 智能匹配", "en": "AI Smart Matching"},
-    "feature.ai_desc": {"zh": "基于语义理解的 AI 模型，跨越中英文，精准匹配你的研究兴趣与机会。", 
-                       "en": "AI model with semantic understanding, matching your research interests across Chinese and English."},
-    "feature.global_title": {"zh": "全球覆盖", "en": "Global Coverage"},
-    "feature.global_desc": {"zh": "聚合 Google Scholar、LinkedIn、NSF REU、微信、小红书等多平台信息。", 
-                           "en": "Aggregating from Google Scholar, LinkedIn, NSF REU, WeChat, Xiaohongshu, and more."},
-    "feature.email_title": {"zh": "智能套磁", "en": "Smart Email Drafting"},
-    "feature.email_desc": {"zh": "AI 生成个性化邮件草稿，引用教授论文，避免常见套磁错误。", 
-                          "en": "AI-powered email drafts that reference specific papers and avoid common cold-email mistakes."},
-    
+    "feature.ai_title": {"zh": "看得懂的个人推荐", "en": "Explainable recommendations"},
+    "feature.ai_desc": {"zh": "结合简历、偏好和收藏寻找共同方向，展示推荐理由，也能调整或关闭行为推荐。", "en": "Find shared topics using your resume, preferences and bookmarks, with visible reasons and activity controls."},
+    "feature.global_title": {"zh": "跨来源找机会", "en": "Explore across sources"},
+    "feature.global_desc": {"zh": "合并公开项目和站内招募，保留原文入口；具体覆盖取决于已接入的数据来源。", "en": "Browse public opportunities and community recruitment with original links. Coverage depends on connected sources."},
+    "feature.email_title": {"zh": "从发现到联系", "en": "From discovery to contact"},
+    "feature.email_desc": {"zh": "用免费模板准备草稿和附件；连接邮箱后核对发送，AI 起草按需选用。", "en": "Prepare drafts and attachments with free templates, then review and send through a connected mailbox. AI drafting is optional."},
+
     # Search
     "search.title": {"zh": "搜索", "en": "Search"},
     "search.results_for": {"zh": "搜索结果：\"{query}\"", "en": "Search Results for \"{query}\""},

@@ -123,8 +123,9 @@ async function unsaveOpportunity(oppId) {
     if (!confirm('{{ i18n.t("saved.unsave_confirm") }}')) return;
     
     try {
-        const response = await fetch(`/api/save/${oppId}`, {
+        const response = await fetch(`/api/save/${encodeURIComponent(oppId)}`, {
             method: 'DELETE',
+            headers: {'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content},
         });
         
         if (response.ok) {
