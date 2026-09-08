@@ -8,6 +8,8 @@ import logging
 from typing import Dict, List, Optional
 from collections import Counter
 
+from app.search_utils import text_contains_term
+
 logger = logging.getLogger(__name__)
 
 # Keyword mappings for matching
@@ -15,7 +17,7 @@ FIELD_KEYWORDS = {
     "nlp": ["nlp", "natural language", "语言处理", "text", "language model", "llm", "chatgpt", "gpt", "bert", "transformer"],
     "cv": ["computer vision", "cv", "image", "视觉", "object detection", "segmentation", "recognition", "cnn", "图像"],
     "ml": ["machine learning", "ml", "机器学习", "deep learning", "neural network", "learning", "模型"],
-    "robotics": ["robot", "机器人", "manipulation", "motion planning", "control", "autonomous"],
+    "robotics": ["robot", "robotics", "robotic", "机器人", "manipulation", "motion planning", "control", "autonomous"],
     "systems": ["system", "系统", "distributed", "operating system", "database", "storage", "kernel"],
     "theory": ["theory", "理论", "algorithm", "complexity", "optimization", "math"],
     "hci": ["hci", "human computer", "人机交互", "interaction", "user interface", "ux", "accessibility"],
@@ -24,14 +26,14 @@ FIELD_KEYWORDS = {
     "database": ["database", "数据库", "sql", "query", "data management", "storage"],
     "networks": ["network", "网络", "wireless", "protocol", "internet", "5g", "communication"],
     "ai_general": ["ai", "artificial intelligence", "人工智能", "intelligent", "agent"],
-    "bioinformatics": ["bio", "生物", "genomics", "protein", "medical", "health", "drug"],
+    "bioinformatics": ["bio", "biology", "bioinformatics", "biomedical", "生物", "genomics", "protein", "medical", "health", "drug"],
     "quantum": ["quantum", "量子", "qubit"],
 }
 
 MAJOR_KEYWORDS = {
     "cs": ["computer science", "cs", "计算机", "software", "programming", "coding"],
     "ee": ["electrical", "ee", "电子", "电气", "circuit", "signal", "embedded"],
-    "math": ["math", "数学", "algebra", "calculus", "geometry", "statistics"],
+    "math": ["math", "mathematics", "数学", "algebra", "calculus", "geometry", "statistics"],
     "physics": ["physics", "物理", "quantum", "mechanics", "particle"],
     "biology": ["biology", "生物", "cell", "genetics", "molecular"],
     "chemistry": ["chemistry", "化学", "molecular", "reaction", "synthesis"],
@@ -48,9 +50,9 @@ REGION_KEYWORDS = {
 }
 
 TARGET_KEYWORDS = {
-    "summer_research": ["summer", "暑期", "暑研", "intern", "实习", "undergraduate research"],
+    "summer_research": ["summer", "暑期", "暑研", "intern", "internship", "实习", "undergraduate research"],
     "phd": ["phd", "doctoral", "博士", "graduate student", "ph.d"],
-    "intern": ["intern", "实习", "research assistant", "ra position"],
+    "intern": ["intern", "internship", "实习", "research assistant", "ra position"],
     "visiting": ["visiting", "访问", "exchange", "交换"],
 }
 
@@ -77,7 +79,7 @@ class Recommender:
         field_matches = 0
         for field in research_fields:
             keywords = FIELD_KEYWORDS.get(field, [])
-            if any(kw in text for kw in keywords):
+            if any(text_contains_term(text, kw) for kw in keywords):
                 field_matches += 1
         if research_fields:
             score += min(25, (field_matches / len(research_fields)) * 25)
@@ -87,7 +89,7 @@ class Recommender:
         major_matches = 0
         for major in majors:
             keywords = MAJOR_KEYWORDS.get(major, [])
-            if any(kw in text for kw in keywords):
+            if any(text_contains_term(text, kw) for kw in keywords):
                 major_matches += 1
         if majors:
             score += min(15, (major_matches / len(majors)) * 15)
@@ -97,7 +99,7 @@ class Recommender:
         target_matches = 0
         for target in target_types:
             keywords = TARGET_KEYWORDS.get(target, [])
-            if any(kw in text for kw in keywords):
+            if any(text_contains_term(text, kw) for kw in keywords):
                 target_matches += 1
         if target_types:
             score += min(20, (target_matches / len(target_types)) * 20)
@@ -108,7 +110,7 @@ class Recommender:
             region_matches = 0
             for region in regions:
                 keywords = REGION_KEYWORDS.get(region, [])
-                if any(kw in text for kw in keywords):
+                if any(text_contains_term(text, kw) for kw in keywords):
                     region_matches += 1
             if regions:
                 score += min(10, (region_matches / len(regions)) * 10)
@@ -130,11 +132,11 @@ class Recommender:
         
         # Analyze search history
         searches = [b for b in behaviors if b.get("action_type") == "search"]
-        search_terms = [b.get("target_id", "").lower() for b in searches[-20:]]  # Last 20 searches
+        search_terms = [b.get("target_id", "").lower() for b in searches[:20]]  # History is newest first.
         
         # Count keyword frequency in searches
         for term in search_terms:
-            if term and term in text:
+            if term and text_contains_term(text, term):
                 score_modifier += 2.0  # Bonus for matching recent search
         
         # Analyze click history

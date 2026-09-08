@@ -6,8 +6,10 @@ Handles registration, login, sessions, and password hashing.
 import hashlib
 import secrets
 import logging
+import hmac
 from typing import Optional, Dict
 from datetime import datetime, timedelta
+from fastapi import HTTPException, Request
 
 logger = logging.getLogger(__name__)
 
@@ -19,18 +21,26 @@ SESSION_DURATION_HOURS = 24 * 7  # 7 days
 
 
 def hash_password(password: str) -> str:
-    """Hash a password using SHA-256 with salt."""
+    """Use a slow password derivation; login still accepts legacy hashes."""
     salt = secrets.token_hex(16)
-    password_hash = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
-    return f"{salt}:{password_hash}"
+    rounds = 600_000
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), rounds).hex()
+    return f"pbkdf2_sha256:{rounds}:{salt}:{digest}"
 
 
 def verify_password(password: str, stored_hash: str) -> bool:
     """Verify a password against its stored hash."""
     try:
+        if stored_hash.startswith("pbkdf2_sha256:"):
+            _, rounds, salt, digest = stored_hash.split(":")
+            rounds = int(rounds)
+            if not 100_000 <= rounds <= 2_000_000:
+                return False
+            actual = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), rounds).hex()
+            return hmac.compare_digest(actual, digest)
         salt, password_hash = stored_hash.split(":")
-        return hashlib.sha256(f"{salt}{password}".encode()).hexdigest() == password_hash
-    except:
+        return hmac.compare_digest(hashlib.sha256(f"{salt}{password}".encode()).hexdigest(), password_hash)
+    except (ValueError, TypeError, AttributeError):
         return False
 
 
@@ -40,6 +50,7 @@ def create_session(user_id: int, user_data: Dict) -> str:
     sessions[token] = {
         "user_id": user_id,
         "user": user_data,
+        "csrf_token": secrets.token_urlsafe(32),
         "created_at": datetime.now(),
         "expires_at": datetime.now() + timedelta(hours=SESSION_DURATION_HOURS),
     }
@@ -76,6 +87,32 @@ def get_current_user(token: str) -> Optional[Dict]:
     if session:
         return session.get("user")
     return None
+
+
+def require_user(request: Request) -> Dict:
+    user = get_current_user(request.cookies.get("session_token"))
+    if not user:
+        raise HTTPException(status_code=401, detail="请先登录 / Sign in first")
+    return user
+
+
+def csrf_token_for(request: Request) -> str:
+    session = get_session(request.cookies.get("session_token"))
+    return session.setdefault("csrf_token", secrets.token_urlsafe(32)) if session else ""
+
+
+def require_csrf(request: Request) -> Dict:
+    user = require_user(request)
+    token = request.headers.get("X-CSRF-Token", "")
+    if not token or not hmac.compare_digest(token, csrf_token_for(request)):
+        raise HTTPException(status_code=403, detail="页面已过期，请刷新后重试 / Refresh this page and retry")
+    return user
+
+
+def revoke_user_sessions(user_id: int):
+    for token, session in list(sessions.items()):
+        if session["user_id"] == user_id:
+            sessions.pop(token, None)
 
 
 def validate_email(email: str) -> bool:

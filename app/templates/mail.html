@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% set zh = i18n.is_zh() %}
+{% block title %}{{ '邮件工作台' if zh else 'Mail workspace' }} · {{ i18n.t('site.name') }}{% endblock %}
+{% block content %}
+<div class="flex flex-wrap justify-between items-center gap-3 mb-6">
+    <div><h1 class="text-2xl font-bold text-gray-900">{{ '邮件工作台' if zh else 'Mail workspace' }}</h1><p class="text-gray-600 mt-1">{{ '免费模板起草、保存和编辑；连接邮箱后可在这里发送。' if zh else 'Draft, save and edit with free templates. Connect a mailbox to send here.' }}</p></div>
+    <a href="#mailAccounts" class="px-4 py-2 rounded-md border bg-white text-indigo-700">{{ '管理邮箱' if zh else 'Manage mailboxes' }}</a>
+</div>
+<div id="mailStatus" role="status" aria-live="polite" class="hidden mb-4 rounded-lg p-3 text-sm"></div>
+<div class="grid lg:grid-cols-[260px_minmax(0,1fr)] gap-6">
+    <aside class="bg-white rounded-xl border p-4 self-start">
+        <div class="flex items-center justify-between mb-3"><h2 class="font-semibold">{{ '我的草稿与发送记录' if zh else 'Drafts and sent mail' }}</h2><button id="newDraft" type="button" class="text-indigo-700 text-sm">{{ '新建' if zh else 'New' }}</button></div>
+        <div id="draftList" class="space-y-2 max-h-[32rem] overflow-y-auto"></div>
+        <p class="text-sm text-gray-500 mt-4">{{ '只有你能看到这些内容；不会读取收件箱。' if zh else 'Only you can access these messages. Your inbox is not read.' }}</p>
+    </aside>
+    <div class="min-w-0 space-y-5">
+        <section class="bg-white rounded-xl border p-5">
+            <div id="opportunityContext" class="mb-4 bg-indigo-50 rounded-lg p-3 {% if not opportunity %}hidden{% endif %}">
+                <a id="opportunityLink" class="font-medium text-indigo-800" href="{% if opportunity %}/opportunity/{{ opportunity.id|urlencode }}{% endif %}">{{ opportunity.title if opportunity else '' }}</a>
+                <p id="applyReminder" class="text-sm text-amber-800 mt-1 {% if not opportunity or not opportunity.has_direct_apply %}hidden{% endif %}">{{ '项目已有申请入口，请优先按原文要求申请；邮件适用于确有必要的询问。' if zh else 'An application link is available. Follow the original instructions; email only when appropriate.' }}</p>
+            </div>
+            <details id="draftOptions" open>
+                <summary class="font-semibold cursor-pointer">{{ '起草信息' if zh else 'Drafting details' }}</summary>
+                <div class="grid sm:grid-cols-2 gap-3 mt-4">
+                    <label class="text-sm font-medium">{{ '你的姓名' if zh else 'Your name' }}<input id="studentName" maxlength="100" value="{{ user.username }}" class="mt-1 w-full border rounded-md p-2 text-base"></label>
+                    <label class="text-sm font-medium">{{ '学校（可选）' if zh else 'School (optional)' }}<input id="studentSchool" maxlength="200" class="mt-1 w-full border rounded-md p-2 text-base"></label>
+                    <label class="text-sm font-medium">{{ '研究兴趣' if zh else 'Research interests' }}<input id="studentInterest" maxlength="500" class="mt-1 w-full border rounded-md p-2 text-base"></label>
+                    <label class="text-sm font-medium">{{ '希望进一步了解的方向（可选）' if zh else 'Area to explore (optional)' }}<input id="draftFocus" maxlength="500" class="mt-1 w-full border rounded-md p-2 text-base"></label>
+                    <label class="text-sm font-medium">{{ '邮件语言' if zh else 'Email language' }}<select id="draftLanguage" class="mt-1 w-full border rounded-md p-2 text-base"><option value="en">English</option><option value="zh">中文</option></select></label>
+                    <label class="text-sm font-medium">{{ '语气' if zh else 'Tone' }}<select id="draftTone" class="mt-1 w-full border rounded-md p-2 text-base"><option value="professional">{{ '专业' if zh else 'Professional' }}</option><option value="concise">{{ '简洁' if zh else 'Concise' }}</option><option value="enthusiastic">{{ '积极' if zh else 'Enthusiastic' }}</option></select></label>
+                    <label class="sm:col-span-2 text-sm font-medium">{{ '简历或背景简介（可选）' if zh else 'Resume or background (optional)' }}<textarea id="draftResume" rows="3" maxlength="6000" class="mt-1 w-full border rounded-md p-2 text-base"></textarea></label>
+                </div>
+                <fieldset class="mt-4 flex flex-wrap gap-4"><legend class="text-sm font-medium mb-2">{{ '起草方式' if zh else 'Drafting mode' }}</legend>
+                    <label class="flex items-center gap-2"><input type="radio" name="draftMode" value="template" checked>{{ '模板（免费）' if zh else 'Template (free)' }}</label>
+                    <label class="flex items-center gap-2 {% if not capabilities.ai_available %}text-gray-400{% endif %}"><input type="radio" name="draftMode" value="ai" {% if not capabilities.ai_available %}disabled{% endif %}>{{ 'AI 辅助（可选）' if zh else 'AI assistance (optional)' }}</label>
+                </fieldset>
+                <p id="aiExplanation" class="text-sm text-gray-500 mt-2">{% if capabilities.ai_available %}{{ '选择 AI 时，姓名、背景与项目内容会交给已配置的 AI 服务。不会自动发送邮件。' if zh else 'AI mode shares your name, background and project context with the configured AI provider. It does not send email.' }}{% else %}{{ 'AI 暂未启用，免费模板可正常使用，不会调用 AI 服务。' if zh else 'AI is not enabled. Free templates remain available without AI calls.' }}{% endif %}</p>
+                <button id="generateDraft" type="button" class="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md disabled:opacity-50">{{ '生成草稿' if zh else 'Generate draft' }}</button>
+                <span id="generationNote" class="text-sm text-gray-600 ml-2"></span>
+            </details>
+        </section>
+        <section class="bg-white rounded-xl border p-5">
+            <div class="flex justify-between items-center gap-2 mb-4"><h2 class="font-semibold">{{ '编辑邮件' if zh else 'Edit message' }}</h2><span id="draftState" class="text-sm text-gray-500"></span></div>
+            <form id="messageForm" class="space-y-4">
+                <label class="block text-sm font-medium">{{ '发件邮箱' if zh else 'From' }}<select id="senderAccount" class="mt-1 w-full border rounded-md p-2 text-base"><option value="">{{ '仅保存草稿，暂不连接邮箱' if zh else 'Save only; no mailbox selected' }}</option></select></label>
+                <label class="block text-sm font-medium">{{ '收件人' if zh else 'To' }}<input id="recipient" type="email" maxlength="254" value="{{ opportunity.professor_email if opportunity else '' }}" class="mt-1 w-full border rounded-md p-2 text-base" placeholder="professor@university.edu"></label>
+                <label class="block text-sm font-medium">{{ '主题' if zh else 'Subject' }}<input id="messageSubject" maxlength="250" class="mt-1 w-full border rounded-md p-2 text-base"></label>
+                <label class="block text-sm font-medium">{{ '正文' if zh else 'Message' }}<textarea id="messageBody" rows="15" maxlength="100000" class="mt-1 w-full border rounded-md p-3 text-base leading-relaxed"></textarea></label>
+                <fieldset class="border rounded-lg p-3">
+                    <legend class="px-1 font-medium">{{ '附件' if zh else 'Attachments' }}</legend>
+                    <label for="attachmentFiles" class="block text-sm mb-2">{{ '添加简历、成绩单或研究材料' if zh else 'Add a CV, transcript or research materials' }}</label>
+                    <input id="attachmentFiles" type="file" multiple class="block w-full text-sm disabled:opacity-50" aria-describedby="attachmentHelp">
+                    <p id="attachmentHelp" class="text-sm text-gray-500 mt-2">{{ '最多 5 个文件，合计 2 MiB；个人附件存储上限 20 MiB。选择后自动保存到私有草稿，不会交给 AI。大文件可在正文附上你愿意分享的链接。' if zh else 'Up to 5 files, 2 MiB total; 20 MiB stored per user. Files save to this private draft and are not shared with AI. For larger files, include a link you intend to share.' }}</p>
+                    <ul id="attachmentList" class="mt-3 space-y-2"></ul>
+                </fieldset>
+                <div class="flex flex-wrap gap-3">
+                    <button id="saveDraft" type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-md disabled:opacity-50">{{ '保存草稿' if zh else 'Save draft' }}</button>
+                    <button id="reviewSend" type="button" class="px-4 py-2 border border-indigo-600 text-indigo-700 rounded-md disabled:opacity-50">{{ '检查并发送' if zh else 'Review and send' }}</button>
+                    <button id="copyMessage" type="button" class="px-4 py-2 border rounded-md">{{ '复制' if zh else 'Copy' }}</button>
+                    <button id="deleteDraft" type="button" class="px-4 py-2 text-red-700 disabled:opacity-50">{{ '删除草稿' if zh else 'Delete draft' }}</button>
+                </div>
+            </form>
+            <p class="text-sm text-gray-500 mt-3">{{ '发送前可再次核对全文。一次只发送一封；发送后内容不可修改。' if zh else 'Review the full message before sending. One recipient per message; sent messages cannot be edited.' }}</p>
+        </section>
+        <section id="mailAccounts" class="bg-white rounded-xl border p-5">
+            <h2 class="font-semibold">{{ '连接邮箱（可选，最多 5 个）' if zh else 'Connect mailboxes (optional, up to 5)' }}</h2>
+            <div id="accountList" class="my-4 space-y-2"></div>
+            <p id="accountReason" class="text-sm text-amber-800 mb-3"></p>
+            <div id="oauthProviders" class="flex flex-wrap gap-3 mb-4"></div>
+            <details><summary class="cursor-pointer font-medium">{{ 'QQ / 网易 / 校内邮箱 / 其他邮件服务器' if zh else 'QQ / NetEase / university / other mail servers' }}</summary>
+                <form id="connectAccountForm" class="grid sm:grid-cols-2 gap-3 mt-4">
+                    <label class="text-sm font-medium">{{ '邮箱类型' if zh else 'Provider' }}<select id="accountProvider" class="mt-1 w-full border rounded-md p-2 text-base"></select></label>
+                    <label class="text-sm font-medium">{{ '邮箱地址' if zh else 'Email address' }}<input id="accountEmail" type="email" maxlength="254" required class="mt-1 w-full border rounded-md p-2 text-base"></label>
+                    <label class="text-sm font-medium">{{ '备注（可选）' if zh else 'Label (optional)' }}<input id="accountLabel" maxlength="80" class="mt-1 w-full border rounded-md p-2 text-base"></label>
+                    <label class="text-sm font-medium">{{ '授权码 / 应用专用密码' if zh else 'App password' }}<input id="accountPassword" type="password" autocomplete="new-password" required maxlength="512" class="mt-1 w-full border rounded-md p-2 text-base"></label>
+                    <fieldset id="customSmtp" class="hidden sm:col-span-2 grid sm:grid-cols-2 gap-3 border rounded-md p-3"><legend class="text-sm px-1">{{ '学校或邮箱服务商提供的发送服务器设置' if zh else 'Outgoing server settings supplied by your provider' }}</legend>
+                        <label class="text-sm">{{ 'SMTP 服务器' if zh else 'SMTP server' }}<input id="smtpHost" maxlength="253" placeholder="smtp.university.edu" class="mt-1 w-full border rounded-md p-2 text-base"></label>
+                        <label class="text-sm">{{ '加密连接' if zh else 'Encryption' }}<select id="smtpSecurity" class="mt-1 w-full border rounded-md p-2 text-base"><option value="ssl">SSL / TLS · 465</option><option value="starttls">STARTTLS · 587</option></select></label>
+                        <label class="sm:col-span-2 text-sm">{{ '登录名（留空则使用邮箱地址）' if zh else 'Username (leave blank to use email)' }}<input id="smtpUsername" maxlength="254" class="mt-1 w-full border rounded-md p-2 text-base"></label>
+                    </fieldset>
+                    <div class="sm:col-span-2"><button id="connectAccount" type="submit" disabled class="px-4 py-2 bg-indigo-600 text-white rounded-md disabled:opacity-50">{{ '验证并连接邮箱' if zh else 'Verify and connect' }}</button><p class="mt-2 text-sm text-gray-500">{{ '仅验证发送权限，不会发测试邮件。授权信息加密保存；可随时断开。学校仅允许单点登录时请选择 Google 或 Microsoft 授权。' if zh else 'Verifies sending access without sending a test message. Credentials are encrypted and removable. Use Google or Microsoft authorization when your school requires SSO.' }}</p></div>
+                </form>
+            </details>
+        </section>
+    </div>
+</div>
+<dialog id="sendReview" aria-labelledby="sendReviewTitle" class="w-[calc(100%-2rem)] max-w-2xl rounded-xl p-6 shadow-xl backdrop:bg-black/40">
+    <h2 id="sendReviewTitle" class="font-bold text-xl mb-4">{{ '确认发送这封邮件' if zh else 'Confirm this email' }}</h2>
+    <dl class="text-sm space-y-2 mb-4"><div>{{ '发件人：' if zh else 'From: ' }}<strong id="reviewFrom"></strong></div><div>{{ '收件人：' if zh else 'To: ' }}<strong id="reviewTo"></strong></div><div>{{ '主题：' if zh else 'Subject: ' }}<strong id="reviewSubject"></strong></div></dl>
+    <pre id="reviewBody" class="whitespace-pre-wrap font-sans text-base max-h-80 overflow-y-auto bg-gray-50 rounded-md p-4"></pre>
+    <p id="reviewAttachments" class="mt-3 text-sm whitespace-pre-wrap break-words"></p>
+    <p class="mt-3 text-sm text-gray-600">{{ '确认后将从所选真实邮箱发送。请核对地址、姓名和内容。' if zh else 'Confirmation sends through the selected real mailbox. Check all addresses, names and content.' }}</p>
+    <div class="flex justify-end gap-3 mt-5"><button id="cancelSend" type="button" class="px-4 py-2 border rounded-md">{{ '继续编辑' if zh else 'Keep editing' }}</button><button id="confirmSend" type="button" class="px-4 py-2 bg-indigo-600 text-white rounded-md disabled:opacity-50">{{ '确认发送' if zh else 'Send email' }}</button></div>
+</dialog>
+<script id="mailBootstrap" type="application/json">{{ {'opportunity': opportunity, 'draftId': draft_id, 'csrf': csrf_token, 'zh': zh, 'capabilities': capabilities}|tojson }}</script>
+<script src="/static/mail.js" defer></script>
+{% endblock %}

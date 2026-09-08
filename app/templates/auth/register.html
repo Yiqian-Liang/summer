@@ -65,9 +65,9 @@
                     class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
                 <label for="agree" class="ml-2 block text-sm text-gray-900">
                     {{ i18n.t('auth.agree_terms') }}
-                    <a href="#" class="text-indigo-600 hover:text-indigo-500">{{ i18n.t('auth.terms') }}</a>
+                    <a href="#" onclick='alert({{ ("用户协议正在起草中，我们承诺保护您的合法权益。" if i18n.is_zh() else "Terms of Service are being drafted. We are committed to protecting your rights.")|tojson }}); return false;' class="text-indigo-600 hover:text-indigo-500">{{ i18n.t('auth.terms') }}</a>
                     {{ i18n.t('auth.and') }}
-                    <a href="#" class="text-indigo-600 hover:text-indigo-500">{{ i18n.t('auth.privacy') }}</a>
+                    <a href="#" onclick='alert({{ ("隐私政策正在起草中，我们绝不会滥用您的个人数据。" if i18n.is_zh() else "Privacy Policy is being drafted. We will never misuse your personal data.")|tojson }}); return false;' class="text-indigo-600 hover:text-indigo-500">{{ i18n.t('auth.privacy') }}</a>
                 </label>
             </div>
 
@@ -93,12 +93,12 @@
             </div>
 
             <div class="mt-6 grid grid-cols-2 gap-3">
-                <a href="#" class="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                    <i class="fab fa-google text-red-500 mr-2"></i>
+                <a href="/login/google" class="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                    <i class="fab fa-google text-red-500 mr-2 mt-0.5"></i>
                     Google
                 </a>
-                <a href="#" class="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                    <i class="fab fa-github mr-2"></i>
+                <a href="/login/github" class="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                    <i class="fab fa-github mr-2 mt-0.5"></i>
                     GitHub
                 </a>
             </div>

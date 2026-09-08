@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token|default('') }}">
     <title>{% block title %}{{ i18n.t('site.name') }}{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -19,6 +20,8 @@
                         <div class="ml-10 flex items-baseline space-x-4">
                             <a href="/" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">{{ i18n.t('nav.home') }}</a>
                             <a href="/search" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">{{ i18n.t('nav.search') }}</a>
+                            <a href="/posts" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">{{ '社区' if i18n.is_zh() else 'Community' }}</a>
+                            <a href="/mail" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">{{ '邮件' if i18n.is_zh() else 'Mail' }}</a>
                             {% if user %}
                             <a href="/saved" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">
                                 <i class="fas fa-bookmark mr-1"></i>{{ i18n.t('nav.saved') }}
@@ -72,6 +75,12 @@
                     {% endif %}
                 </div>
             </div>
+        </div>
+        <div class="md:hidden flex gap-4 px-4 py-2 border-t border-indigo-500 text-sm overflow-x-auto">
+            <a href="/search">{{ '搜索' if i18n.is_zh() else 'Search' }}</a>
+            <a href="/posts">{{ '社区' if i18n.is_zh() else 'Community' }}</a>
+            <a href="/posts/new">{{ '发帖' if i18n.is_zh() else 'Post' }}</a>
+            <a href="/mail">{{ '邮件' if i18n.is_zh() else 'Mail' }}</a>
         </div>
     </nav>
 

@@ -41,7 +41,7 @@
                         </div>
                         
                         <h3 class="text-xl font-semibold text-gray-900 hover:text-indigo-600 transition">
-                            <a href="/opportunity/{{ opp.id }}">{{ opp.title }}</a>
+                            <a href="/opportunity/{{ opp.id }}">{{ (opp.title or '')|escape }}</a>
                         </h3>
                         
                         <div class="mt-2 text-sm text-gray-600 space-y-1">
@@ -57,7 +57,7 @@
                         </div>
                         
                         {% if opp.description %}
-                        <p class="mt-3 text-gray-700 line-clamp-2">{{ opp.description[:200] }}{% if opp.description|length > 200 %}...{% endif %}</p>
+                        <p class="mt-3 text-gray-700 line-clamp-2">{{ (opp.description or '')[:200] }}{% if (opp.description or '')|length > 200 %}...{% endif %}</p>
                         {% endif %}
                         
                         <!-- Hiring Signals -->
@@ -83,11 +83,17 @@
                         </span>
                         {% endif %}
                         
-                        <!-- Action Buttons -->
-                        <div class="flex space-x-2">
-                            <a href="/opportunity/{{ opp.id }}" 
-                               class="px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
-                                {{ i18n.t('saved.view_details') }}
+	                        <!-- Action Buttons -->
+	                        <div class="flex flex-wrap justify-end gap-2">
+	                            {% if opp.source_url %}
+	                            <a href="{{ opp.source_url }}" target="_blank"
+	                               class="px-3 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">
+	                                <i class="fas fa-external-link-alt mr-1"></i>{{ '原文' if i18n.is_zh() else 'Source' }}
+	                            </a>
+	                            {% endif %}
+	                            <a href="/opportunity/{{ opp.id }}"
+	                               class="px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+	                                {{ i18n.t('saved.view_details') }}
                             </a>
                             <button onclick="unsaveOpportunity('{{ opp.id }}')"
                                class="px-3 py-2 text-sm border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition">

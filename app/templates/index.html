@@ -26,7 +26,7 @@
         <span class="block text-indigo-600">{{ '暑研 & PhD 机会' if i18n.is_zh() else 'Summer Research & PhD' }}</span>
     </h1>
     <p class="mt-3 max-w-md mx-auto text-base text-gray-500 sm:text-lg md:mt-5 md:text-xl md:max-w-3xl">
-        {{ i18n.t('site.description') }}
+        {{ '把分散的研究机会，整理成你的申请清单。按方向跨来源搜索，查看原文与截止信息，收藏后准备联系材料。' if i18n.is_zh() else 'Turn scattered research opportunities into your application shortlist. Search across sources, inspect original postings and deadlines, then prepare your materials.' }}
     </p>
     {% endif %}
     <div class="mt-8 max-w-xl mx-auto">
@@ -63,12 +63,12 @@
             <p class="text-sm text-gray-500">{{ i18n.t('home.opportunities') }}</p>
         </div>
         <div>
-            <span class="text-2xl font-bold text-green-600">10+</span>
-            <p class="text-sm text-gray-500">{{ i18n.t('home.platforms') }}</p>
+            <a href="/search" class="text-xl font-bold text-green-700">{{ '跨来源筛选' if i18n.is_zh() else 'Search across sources' }}</a>
+            <p class="text-sm text-gray-500">{{ '关键词匹配 · 合并重复结果 · 原文可追溯' if i18n.is_zh() else 'Keyword matching · Deduplication · Original sources' }}</p>
         </div>
         <div>
-            <span class="text-2xl font-bold text-purple-600">AI</span>
-            <p class="text-sm text-gray-500">{{ i18n.t('home.ai_matching') }}</p>
+            <a href="/mail" class="text-xl font-bold text-purple-700">{{ '从发现到联系' if i18n.is_zh() else 'From discovery to contact' }}</a>
+            <p class="text-sm text-gray-500">{{ '收藏机会 · 起草邮件 · 整理申请附件' if i18n.is_zh() else 'Save opportunities · Draft emails · Attach materials' }}</p>
         </div>
     </div>
 </div>
@@ -87,76 +87,154 @@
 </div>
 
 {% if opportunities %}
-<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
     {% for opp in opportunities %}
-    <div class="bg-white shadow-sm overflow-hidden rounded-lg border border-gray-200 hover:border-indigo-300 hover:shadow-md transition flex flex-col h-full">
-        <!-- Card Header -->
-        <div class="px-4 py-4 border-b border-gray-100">
-            <div class="flex justify-between items-start">
-                <div class="flex-1 min-w-0">
-                    <h3 class="text-lg font-semibold text-gray-900 truncate">
-                        <a href="/opportunity/{{ opp.id }}" class="hover:text-indigo-600">
-                            {{ opp.title[:60] }}{% if opp.title|length > 60 %}...{% endif %}
-                        </a>
-                    </h3>
-                    <p class="mt-1 text-sm text-gray-500 truncate">
-                        {% if opp.professor_name %}{{ opp.professor_name }} · {% endif %}{{ opp.university or 'Unknown' }}
-                    </p>
-                </div>
-                {% if opp.quality_score and opp.quality_score > 80 %}
-                <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                    <i class="fas fa-star text-yellow-500 mr-1"></i>{{ '优质' if i18n.is_zh() else 'Top Pick' }}
-                </span>
-                {% elif opp.personalized_score and opp.personalized_score > 0.7 %}
-                <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
-                    <i class="fas fa-thumbs-up mr-1"></i>{{ '为你推荐' if i18n.is_zh() else 'For You' }}
-                </span>
-                {% endif %}
-            </div>
-        </div>
-        
-        <!-- Card Body -->
-        <div class="px-4 py-3 flex-grow">
-            <p class="text-sm text-gray-600 line-clamp-3">
-                {{ opp.description[:200] }}{% if opp.description|length > 200 %}...{% endif %}
-            </p>
-            
-            <!-- Hiring Signals -->
-            {% if opp.hiring_signals_list %}
-            <div class="mt-3 flex flex-wrap gap-1">
-                {% for signal in opp.hiring_signals_list[:2] %}
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700">
-                    {{ signal[:30] }}{% if signal|length > 30 %}...{% endif %}
-                </span>
-                {% endfor %}
-            </div>
+    <div class="bg-white shadow-sm overflow-hidden rounded-xl border border-gray-200 hover:border-indigo-300 hover:shadow-lg transition flex flex-col h-full">
+        <!-- Card Header: Source + Quality Badge -->
+        <div class="px-4 pt-3 pb-2 flex justify-between items-center">
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                {% if opp.source_type == 'scholar' %}bg-blue-100 text-blue-700
+                {% elif opp.source_type == 'linkedin' %}bg-sky-100 text-sky-700
+                {% elif opp.source_type == 'twitter' %}bg-gray-100 text-gray-700
+                {% elif opp.source_type == 'xiaohongshu' or opp.source_type == 'rednote' %}bg-red-100 text-red-700
+                {% elif opp.source_type == 'wechat' %}bg-green-100 text-green-700
+                {% elif opp.source_type == 'nsf' %}bg-purple-100 text-purple-700
+                {% else %}bg-gray-100 text-gray-600{% endif %}">
+                {% if opp.source_type == 'scholar' %}<i class="fas fa-graduation-cap mr-1"></i>
+                {% elif opp.source_type == 'linkedin' %}<i class="fab fa-linkedin mr-1"></i>
+                {% elif opp.source_type == 'twitter' %}<i class="fab fa-twitter mr-1"></i>
+                {% elif opp.source_type == 'xiaohongshu' or opp.source_type == 'rednote' %}<i class="fas fa-book-open mr-1"></i>
+                {% elif opp.source_type == 'wechat' %}<i class="fab fa-weixin mr-1"></i>
+                {% elif opp.source_type == 'nsf' %}<i class="fas fa-flask mr-1"></i>
+                {% else %}<i class="fas fa-globe mr-1"></i>{% endif %}
+                {{ opp.source_type }}
+            </span>
+            {% if opp.quality_score and opp.quality_score > 80 %}
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                <i class="fas fa-star mr-1"></i>{{ '优质' if i18n.is_zh() else 'Top' }}
+            </span>
             {% endif %}
         </div>
         
-        <!-- Card Footer -->
-        <div class="px-4 py-3 bg-gray-50 border-t border-gray-100 mt-auto">
-            <div class="flex justify-between items-center">
-                <span class="text-xs text-gray-400">
-                    <i class="fas fa-tag mr-1"></i>{{ opp.source_type }}
-                </span>
-                <div class="flex gap-2 items-center">
-                    <!-- Save Button -->
+        <!-- Card Body: Main Content -->
+        <div class="px-4 pb-3 flex-grow">
+            <!-- Title -->
+            <h3 class="text-base font-bold text-gray-900 leading-tight mb-2 line-clamp-2">
+                <a href="/opportunity/{{ opp.id }}" class="hover:text-indigo-600 transition">
+                    {{ (opp.title or '')|escape }}
+                </a>
+            </h3>
+
+            <!-- Key Info Line -->
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 mb-2">
+                {% if opp.professor_name %}
+                <span><i class="fas fa-user text-gray-400 mr-1"></i>{{ opp.professor_name|escape }}</span>
+                <span class="text-gray-300">&middot;</span>
+                {% endif %}
+                {% if opp.university %}
+                <span><i class="fas fa-university text-gray-400 mr-1"></i>{{ opp.university|escape }}</span>
+                {% endif %}
+            </div>
+
+            <!-- Research Focus -->
+            {% if opp.research_focus %}
+            <p class="text-sm text-indigo-600 font-medium mb-2">
+                <i class="fas fa-flask mr-1"></i>{{ '研究方向：' if i18n.is_zh() else 'Focus: ' }}{{ opp.research_focus|escape }}
+            </p>
+            {% endif %}
+
+            {% if opp.description %}
+            <!-- Description Preview -->
+            <p class="text-gray-500 text-sm mb-4 line-clamp-3 leading-relaxed">
+                {{ (opp.description or '')[:150]|escape }}{% if (opp.description or '')|length > 150 %}...{% endif %}
+            </p>
+            {% endif %}
+            
+            {% if opp.requirements %}
+            <div class="mt-2 mb-4 bg-indigo-50 border border-indigo-100 rounded px-3 py-2">
+                <p class="text-xs text-indigo-800 font-medium line-clamp-2">
+                    <i class="fas fa-clipboard-check mr-1 text-indigo-500"></i>
+                    <span class="font-bold">{{ '要求: ' if i18n.is_zh() else 'Req: ' }}</span>{{ (opp.requirements or '')[:100]|escape }}
+                </p>
+            </div>
+            {% endif %}
+
+            <!-- Tags -->
+            {% if opp.tags %}
+            <div class="flex flex-wrap gap-1 mb-2">
+                {% for tag in opp.tags[:5] %}
+                <a href="/search?q={{ tag.replace('#', '') }}"
+                   class="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600 hover:bg-indigo-100 hover:text-indigo-600 transition">
+                    {{ tag }}
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Deadline / Status -->
+            {% if opp.deadline %}
+                {% set dl = opp.deadline|lower %}
+                {% if 'rolling' in dl or 'open' in dl or 'until filled' in dl or '滚动' in dl or '随时' in dl %}
+                <div class="inline-flex items-center text-xs text-green-600 font-medium bg-green-50 px-2 py-1 rounded">
+                    <i class="fas fa-door-open mr-1"></i>
+                    {{ '开放申请中' if i18n.is_zh() else 'Open / Rolling' }}
+                </div>
+                {% else %}
+                <div class="inline-flex items-center text-xs text-orange-600 font-medium bg-orange-50 px-2 py-1 rounded">
+                    <i class="fas fa-clock mr-1"></i>
+                    {{ '截止：' if i18n.is_zh() else 'Deadline: ' }}{{ opp.deadline|escape }}
+                </div>
+                {% endif %}
+            {% endif %}
+        </div>
+        
+        <!-- Card Footer: Actions -->
+        <div class="px-4 py-2 bg-gray-50 border-t border-gray-100 mt-auto">
+            <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                <!-- Quick Links -->
+                <div class="flex flex-wrap items-center gap-3 text-xs">
+                    {% if opp.source_url %}
+                    <a href="{{ opp.source_url }}" target="_blank"
+                       class="inline-flex items-center text-gray-500 hover:text-indigo-600 transition">
+                        <i class="fas fa-external-link-alt mr-1"></i>{{ '原文' if i18n.is_zh() else 'Source' }}
+                    </a>
+                    {% endif %}
+
+                    <!-- Email: extracted or search -->
+                    {% if opp.professor_email %}
+                    <a href="mailto:{{ opp.professor_email }}"
+                       class="inline-flex items-center text-green-600 hover:text-green-700 transition"
+                       title="{{ opp.professor_email }}">
+                        <i class="fas fa-envelope mr-1"></i>{{ '邮箱' if i18n.is_zh() else 'Email' }}
+                    </a>
+                    {% elif opp.email_search_url %}
+                    <a href="{{ opp.email_search_url }}" target="_blank"
+                       class="inline-flex items-center text-gray-500 hover:text-indigo-600 transition">
+                        <i class="fas fa-search mr-1"></i>{{ '找邮箱' if i18n.is_zh() else 'Find Email' }}
+                    </a>
+                    {% endif %}
+
+                    <!-- Homepage search -->
+                    {% if opp.homepage_search_url %}
+                    <a href="{{ opp.homepage_search_url }}" target="_blank"
+                       class="inline-flex items-center text-gray-500 hover:text-indigo-600 transition">
+                        <i class="fas fa-user mr-1"></i>{{ '主页' if i18n.is_zh() else 'Homepage' }}
+                    </a>
+                    {% endif %}
+                </div>
+
+                <!-- Main Actions -->
+                <div class="flex flex-wrap justify-end gap-2 items-center">
                     {% if user %}
                     <button onclick="toggleSave('{{ opp.id }}', this)" 
                             class="save-btn p-1.5 rounded hover:bg-gray-200 transition {% if opp.is_saved %}text-yellow-500{% else %}text-gray-400{% endif %}"
-                            data-saved="{{ 'true' if opp.is_saved else 'false' }}">
+                            data-saved="{{ 'true' if opp.is_saved else 'false' }}"
+                            title="{{ '收藏' if i18n.is_zh() else 'Save' }}">
                         <i class="{% if opp.is_saved %}fas{% else %}far{% endif %} fa-bookmark"></i>
                     </button>
                     {% endif %}
-                    
-                    {% if opp.has_direct_apply and opp.direct_apply_link %}
-                    <a href="{{ opp.direct_apply_link }}" target="_blank" 
-                       class="inline-flex items-center px-2 py-1 text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700">
-                        <i class="fas fa-external-link-alt mr-1"></i> {{ i18n.t('home.apply') }}
-                    </a>
-                    {% endif %}
                     <a href="/opportunity/{{ opp.id }}" 
-                       class="inline-flex items-center px-2 py-1 text-xs font-medium rounded text-indigo-600 bg-indigo-50 hover:bg-indigo-100">
+                       class="inline-flex items-center px-3 py-1 text-xs font-medium rounded-full text-white bg-indigo-600 hover:bg-indigo-700 transition">
                         {{ i18n.t('home.details') }} <i class="fas fa-arrow-right ml-1"></i>
                     </a>
                 </div>

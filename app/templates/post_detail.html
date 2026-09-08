@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{{ post.title }} - {{ i18n.t('site.name') }}{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <a href="/posts" class="text-sm text-indigo-600 hover:underline">← 科研社区</a>
+    <article class="bg-white border border-gray-200 rounded-xl shadow-sm p-5 sm:p-8 mt-5">
+        <div class="flex flex-wrap items-center gap-2 text-xs mb-4">
+            <span class="rounded-full bg-indigo-50 text-indigo-700 px-3 py-1">{{ {'recruitment': '社区招募', 'experience': '经验分享', 'discussion': '讨论交流'}.get(post.post_kind, '社区招募') }}</span>
+            <span class="rounded-full bg-amber-50 text-amber-800 px-3 py-1">发布者未核验</span>
+            {% if user and user.id == post.owner_user_id %}<a href="/posts/{{ post.id }}/edit" class="ml-auto text-sm text-indigo-600 hover:underline">编辑与管理</a>{% endif %}
+        </div>
+        <h1 class="text-3xl font-bold text-gray-900 break-words">{{ post.title }}</h1>
+        <div class="flex flex-wrap gap-3 text-sm text-gray-500 mt-4">
+            <span>发布账号：{{ post.author_name or '社区用户' }}</span>
+            <span>发布于 {{ post.published_at[:10] }}</span>
+            {% if post.university %}<span>{{ post.university }}</span>{% endif %}
+            {% if post.professor_name %}<span>{{ post.professor_name }}</span>{% endif %}
+        </div>
+        {% if post.post_kind == 'recruitment' %}
+        <p class="mt-5 p-3 rounded-lg bg-amber-50 text-sm text-amber-900">本帖由用户自行发布，身份与机构归属尚未核验。请通过机构官网确认招募信息。</p>
+        {% endif %}
+        <div class="text-gray-800 leading-relaxed whitespace-pre-wrap break-words mt-7">{{ post.description }}</div>
+        {% if post.post_kind == 'recruitment' %}
+        {% if post.requirements %}
+        <h2 class="text-lg font-semibold text-gray-900 mt-8">申请要求</h2>
+        <div class="text-gray-700 leading-relaxed whitespace-pre-wrap break-words mt-3">{{ post.requirements }}</div>
+        {% endif %}
+        <div class="border-t border-gray-200 pt-5 mt-8 space-y-3">
+            {% if post.deadline %}<p class="text-sm text-gray-700">申请截止：{{ post.deadline }}</p>{% endif %}
+            {% if post.contact_email %}<p class="text-sm text-gray-700 break-all">联系邮箱：<a href="mailto:{{ post.contact_email }}" class="text-indigo-600 hover:underline">{{ post.contact_email }}</a></p>{% endif %}
+            <div class="flex flex-wrap gap-3 pt-2">
+                <a href="/mail?opportunity={{ post.id }}" class="rounded-lg bg-indigo-600 hover:bg-indigo-700 px-5 py-3 text-white font-medium">起草联系邮件</a>
+                {% if post.direct_apply_link %}<a href="{{ post.direct_apply_link }}" target="_blank" rel="noopener noreferrer nofollow ugc" class="rounded-lg border border-gray-300 hover:bg-gray-50 px-5 py-3 text-gray-700 font-medium">前往申请 ↗</a>{% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </article>
+    <section id="comments" class="bg-white border border-gray-200 rounded-xl shadow-sm p-5 sm:p-8 mt-6">
+        <h2 class="text-xl font-semibold text-gray-900">评论 <span class="text-gray-500 font-normal text-base">{{ comment_count }}</span></h2>
+        <p id="comment-feedback" role="status" aria-live="polite" class="text-sm text-red-700 mt-3" hidden></p>
+        <div class="divide-y divide-gray-100 mt-4">
+            {% for comment in comments %}
+            <article id="comment-{{ comment.id }}" class="py-5">
+                <div class="flex flex-wrap gap-3 items-center text-sm">
+                    <span class="font-medium text-gray-800">{{ comment.author_name or '社区用户' }}</span>
+                    <time class="text-gray-500" datetime="{{ comment.created_at }}">{{ comment.created_at[:10] }}</time>
+                    {% if user and comment.owner_user_id == user.id %}<button type="button" data-delete-comment="{{ comment.id }}" class="ml-auto text-gray-500 hover:text-red-600 disabled:opacity-50" aria-label="删除我的评论">删除</button>{% endif %}
+                </div>
+                <p class="whitespace-pre-wrap break-words text-gray-700 mt-3">{{ comment.body }}</p>
+            </article>
+            {% else %}
+            <p class="text-gray-500 py-6">还没有评论，欢迎交流。</p>
+            {% endfor %}
+        </div>
+        {% if total_pages > 1 %}
+        <nav aria-label="评论分页" class="flex items-center justify-center gap-6 my-5">
+            {% if page > 1 %}<a href="?page={{ page - 1 }}#comments" class="text-indigo-600 hover:underline">上一页</a>{% endif %}
+            <span class="text-sm text-gray-500">第 {{ page }} / {{ total_pages }} 页</span>
+            {% if page < total_pages %}<a href="?page={{ page + 1 }}#comments" class="text-indigo-600 hover:underline">下一页</a>{% endif %}
+        </nav>
+        {% endif %}
+        {% if user %}
+        <form id="comment-form" class="border-t border-gray-200 pt-5 mt-3">
+            <label for="comment-body" class="block text-sm font-medium text-gray-700 mb-2">发表评论</label>
+            <textarea id="comment-body" name="body" required maxlength="2000" rows="4" placeholder="分享想法或提出问题，请尊重他人隐私。" class="w-full border border-gray-300 rounded-lg px-3 py-2"></textarea>
+            <button type="submit" class="bg-indigo-600 text-white px-5 py-2.5 rounded-lg mt-3 hover:bg-indigo-700 disabled:opacity-50">发表评论</button>
+        </form>
+        {% else %}
+        <p class="border-t pt-5 text-sm text-gray-600"><a href="/login?next=/posts/{{ post.id }}" class="text-indigo-600 hover:underline">登录</a>后参与讨论。</p>
+        {% endif %}
+    </section>
+</div>
+{% if user %}
+<script>
+const commentEndpoint = '/api/posts/' + {{ post.id|tojson }} + '/comments';
+const commentCsrf = {{ csrf_token|tojson }};
+const commentFeedback = document.getElementById('comment-feedback');
+async function commentRequest(url, method, body) {
+    const response = await fetch(url, {method, headers: {'Content-Type': 'application/json', 'X-CSRF-Token': commentCsrf}, ...(body ? {body: JSON.stringify(body)} : {})});
+    const result = await response.json();
+    if (!response.ok) throw new Error(Array.isArray(result.detail) ? result.detail.map(item => item.msg).join('\n') : result.detail || '操作失败，请重试。');
+    return result;
+}
+function showCommentError(error) {
+    commentFeedback.textContent = error.message || '网络连接失败，请重试。';
+    commentFeedback.hidden = false;
+}
+document.getElementById('comment-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = event.target.querySelector('button');
+    button.disabled = true;
+    commentFeedback.hidden = true;
+    try {
+        const result = await commentRequest(commentEndpoint, 'POST', {body: document.getElementById('comment-body').value});
+        const destination = new URL(location.href);
+        destination.searchParams.set('page', result.page);
+        destination.hash = 'comments';
+        if (destination.search === location.search) {
+            location.hash = 'comments';
+            location.reload();
+        } else location.assign(destination.href);
+    } catch (error) { showCommentError(error); button.disabled = false; }
+});
+document.querySelectorAll('[data-delete-comment]').forEach(button => button.addEventListener('click', async () => {
+    button.disabled = true;
+    commentFeedback.hidden = true;
+    try {
+        await commentRequest(commentEndpoint + '/' + button.dataset.deleteComment, 'DELETE');
+        location.reload();
+    } catch (error) { showCommentError(error); button.disabled = false; }
+}));
+</script>
+{% endif %}
+{% endblock %}

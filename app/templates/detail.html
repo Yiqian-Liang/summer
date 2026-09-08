@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ opportunity.title[:50] }} - {{ i18n.t('site.name') }}{% endblock %}
+{% block title %}{{ (opportunity.title or '')[:50]|escape }} - {{ i18n.t('site.name') }}{% endblock %}
 
 {% block content %}
 <div class="max-w-4xl mx-auto">
@@ -22,7 +22,7 @@
                     <div class="flex flex-wrap items-center gap-2 mb-2">
                         <!-- Source Badge -->
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-white bg-opacity-20">
-                            {{ opportunity.source_type }}
+                            {{ opportunity.source_type or '' }}
                         </span>
                         {% if opportunity.quality_score and opportunity.quality_score > 80 %}
                         <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-400 text-yellow-900">
@@ -30,7 +30,7 @@
                         </span>
                         {% endif %}
                     </div>
-                    <h1 class="text-2xl font-bold mb-2">{{ opportunity.title }}</h1>
+                    <h1 class="text-2xl font-bold mb-2">{{ (opportunity.title or '')|escape }}</h1>
                     <div class="flex flex-wrap items-center gap-3 text-indigo-100">
                         {% if opportunity.professor_name %}
                         <span><i class="fas fa-user-tie mr-1"></i> {{ opportunity.professor_name }}</span>
@@ -58,7 +58,7 @@
         <div class="p-6">
             <!-- Quick Actions -->
             <div class="flex flex-wrap gap-3 mb-6">
-                {% if opportunity.source_url and not opportunity.source_url.startswith('unknown://') %}
+                {% if opportunity.source_url and opportunity.provider != 'user_post' %}
                 <a href="{{ opportunity.source_url }}" target="_blank" 
                    class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
                     <i class="fas fa-external-link-alt mr-2"></i> {{ i18n.t('detail.view_source') }}
@@ -70,11 +70,16 @@
                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700">
                     <i class="fas fa-paper-plane mr-2"></i> {{ i18n.t('detail.apply_now') }}
                 </a>
-                {% else %}
-                <button onclick="openRagWorkbench()" 
-                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
-                    <i class="fas fa-envelope mr-2"></i> {{ i18n.t('detail.generate_email') }}
-                </button>
+                {% endif %}
+                <a href="/mail?opportunity={{ opportunity.id|urlencode }}"
+                   class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
+                    <i class="fas fa-envelope mr-2"></i>{{ '起草邮件' if i18n.is_zh() else 'Draft an email' }}
+                </a>
+                {% if opportunity.provider == 'user_post' %}
+                <span class="inline-flex items-center text-sm text-amber-800">{{ '发布者自述 · 身份未核验' if i18n.is_zh() else 'Community post · identity unverified' }}</span>
+                {% if user and user.id == opportunity.owner_user_id %}
+                <a href="/posts/{{ opportunity.id }}/edit" class="px-4 py-2 text-sm text-indigo-700 border rounded-md">{{ '管理帖子' if i18n.is_zh() else 'Manage post' }}</a>
+                {% endif %}
                 {% endif %}
             </div>
 
@@ -97,14 +102,127 @@
             </div>
             {% endif %}
 
-            <!-- Description -->
+            <!-- AI Analysis -->
             <div class="mb-6">
                 <h3 class="text-lg font-semibold text-gray-900 mb-3">
-                    <i class="fas fa-info-circle text-indigo-500 mr-2"></i> {{ i18n.t('detail.description') }}
+                    <i class="fas fa-brain text-purple-500 mr-2"></i> {{ 'AI 智能分析' if i18n.is_zh() else 'AI Analysis' }}
                 </h3>
-                <div class="bg-gray-50 rounded-lg p-4 text-gray-700 leading-relaxed whitespace-pre-line">
-                    {{ opportunity.description or (i18n.t('search.no_results') if i18n.is_zh() else 'No description available.') }}
+                <div id="aiAnalysisBox" class="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                    <div id="aiAnalysisInitial">
+                        <p class="text-sm text-purple-800 mb-3">
+                            {{ '输入你的研究兴趣，使用大模型深入分析该机会与你的匹配度。' if i18n.is_zh() else 'Enter your research interest to analyze the match with this opportunity.' }}
+                        </p>
+                        <div class="flex gap-2 mb-3">
+                            <input type="text" id="aiInterestInput" placeholder="{{ '例如：Reinforcement Learning' if i18n.is_zh() else 'e.g., Reinforcement Learning' }}"
+                                   class="flex-1 rounded-md border-purple-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm p-2 border">
+                            <button onclick="runAIAnalysis()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700">
+                                <i class="fas fa-magic mr-2"></i> {{ '分析' if i18n.is_zh() else 'Analyze' }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="aiAnalysisLoading" class="hidden">
+                        <div class="flex items-center space-x-2 text-purple-600">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <span>{{ '正在分析中...' if i18n.is_zh() else 'Analyzing...' }}</span>
+                        </div>
+                    </div>
+
+                    <div id="aiAnalysisResult" class="hidden space-y-3 border-t border-purple-200 pt-3 mt-3">
+                        <div>
+                            <span class="text-xs font-bold text-purple-500 uppercase">{{ '匹配结论' if i18n.is_zh() else 'Verdict' }}</span>
+                            <div id="aiVerdict" class="font-bold text-purple-900 text-lg"></div>
+                        </div>
+                        <div>
+                            <span class="text-xs font-bold text-purple-500 uppercase">{{ '分析理由' if i18n.is_zh() else 'Reasoning' }}</span>
+                            <p id="aiReasoning" class="text-sm text-purple-800"></p>
+                        </div>
+                        <div>
+                            <span class="text-xs font-bold text-purple-500 uppercase">{{ '建议行动' if i18n.is_zh() else 'Suggested Action' }}</span>
+                            <div id="aiAction" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 mt-1"></div>
+                        </div>
+                    </div>
                 </div>
+            </div>
+
+            <!-- Source Evidence -->
+            <div class="mb-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-3">
+                    <i class="fas fa-link text-blue-500 mr-2"></i> {{ '来源核验' if i18n.is_zh() else 'Source Evidence' }}
+                </h3>
+                <div class="bg-blue-50 border border-blue-100 rounded-lg p-4">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
+                        <div class="min-w-0">
+                            <p class="text-sm font-medium text-blue-900 truncate">{{ opportunity.source_url }}</p>
+                            <p class="text-xs text-blue-700 mt-1">
+                                {{ '以下内容只展示已抓取摘要或公开网页短摘录；不会补全或编造原帖。' if i18n.is_zh() else 'Only cached snippets or short public excerpts are shown here; nothing is completed or fabricated.' }}
+                            </p>
+                        </div>
+                        <button onclick="loadSourcePreview()"
+                                id="sourcePreviewBtn"
+                                class="shrink-0 inline-flex items-center px-3 py-2 text-xs font-medium rounded-md text-blue-700 bg-white border border-blue-200 hover:bg-blue-100 transition">
+                            <i class="fas fa-file-alt mr-1.5"></i>{{ '加载公开摘录' if i18n.is_zh() else 'Load Public Excerpt' }}
+                        </button>
+                    </div>
+
+                    {% if opportunity.description %}
+                    <div class="bg-white border border-blue-100 rounded p-3">
+                        <div class="text-xs font-semibold text-blue-500 mb-1">{{ '缓存摘要' if i18n.is_zh() else 'Cached Snippet' }}</div>
+                        <p class="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{{ (opportunity.description or '')[:700]|escape }}{% if (opportunity.description or '')|length > 700 %}...{% endif %}</p>
+                    </div>
+                    {% endif %}
+
+                    <div id="sourcePreviewBox" class="hidden mt-3 bg-white border border-blue-100 rounded p-3">
+                        <div id="sourcePreviewTitle" class="text-xs font-semibold text-blue-500 mb-1"></div>
+                        <div id="sourcePreviewText" class="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detailed Description -->
+            <div class="mb-6">
+                <!-- Requirements/Eligibility section -->
+                {% if opportunity.requirements %}
+                <div class="mb-6">
+                    <h3 class="text-xl font-semibold text-gray-800 mb-3 flex items-center">
+                        <i class="fas fa-clipboard-check text-indigo-500 mr-2"></i> {{ '申请要求 / Eligibility' if i18n.is_zh() else 'Requirements & Eligibility' }}
+                    </h3>
+                    <div class="bg-indigo-50 border border-indigo-100 rounded-lg p-5">
+                        <div class="whitespace-pre-wrap font-sans text-sm leading-relaxed text-indigo-900">{{ (opportunity.requirements or '')|escape }}</div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <h3 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-align-left text-indigo-500 mr-2"></i> {{ i18n.t('detail.description') }}
+                </h3>
+                <div class="prose max-w-none text-gray-700 bg-gray-50 p-6 rounded-lg border border-gray-100 mb-4">
+                    <div class="whitespace-pre-wrap font-sans text-sm leading-relaxed">{{ (opportunity.description or '')|escape }}</div>
+
+                    {% if opportunity.source_url %}
+                    <div class="mt-4 pt-4 border-t border-gray-200">
+                        <a href="{{ opportunity.source_url }}" target="_blank" class="text-indigo-600 hover:text-indigo-800 font-medium inline-flex items-center">
+                            {{ '查看原文链接' if i18n.is_zh() else 'View Original Source' }} <i class="fas fa-external-link-alt ml-1 text-xs"></i>
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% if opportunity.source_url and ('scholar.google' not in opportunity.source_url) and ('linkedin.com' not in opportunity.source_url) and ('xiaohongshu.com' not in opportunity.source_url) and ('x.com' not in opportunity.source_url) and ('twitter.com' not in opportunity.source_url) %}
+                <div class="mt-6">
+                    <h4 class="text-sm font-bold text-gray-900 mb-2">{{ '网页预览' if i18n.is_zh() else 'Web Preview' }}</h4>
+                    <div class="w-full h-96 border border-gray-200 rounded-lg overflow-hidden bg-gray-100 relative group">
+                        <iframe src="{{ opportunity.source_url }}" class="w-full h-full" title="Source Preview" sandbox="allow-scripts allow-same-origin"></iframe>
+
+                        <!-- Overlay for sites that block iframing -->
+                        <div class="absolute inset-0 flex items-center justify-center bg-gray-50 bg-opacity-90 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+                            <p class="text-gray-500 text-sm">
+                                {{ '如果预览无法加载，请点击上方链接查看原文' if i18n.is_zh() else 'If preview fails to load, please view original source' }}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
             </div>
 
             <!-- Details Grid -->
@@ -134,7 +252,23 @@
                     {% if opportunity.professor_name %}
                     <div class="bg-gray-50 rounded-lg p-4">
                         <dt class="text-sm font-medium text-gray-500">{{ i18n.t('detail.professor') }}</dt>
-                        <dd class="mt-1 text-sm text-gray-900">{{ opportunity.professor_name }}</dd>
+                        <dd class="mt-1 text-sm text-gray-900 font-medium">{{ opportunity.professor_name }}</dd>
+
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            {% if opportunity.professor_email %}
+                            <a href="mailto:{{ opportunity.professor_email }}" class="inline-flex items-center px-2 py-1 rounded text-xs bg-green-50 text-green-700 hover:bg-green-100">
+                                <i class="fas fa-envelope mr-1"></i> Email
+                            </a>
+                            {% else %}
+                            <a href="{{ opportunity.email_search_url }}" target="_blank" class="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-100 text-gray-600 hover:bg-gray-200">
+                                <i class="fas fa-search mr-1"></i> Find Email
+                            </a>
+                            {% endif %}
+
+                            <a href="{{ opportunity.homepage_search_url }}" target="_blank" class="inline-flex items-center px-2 py-1 rounded text-xs bg-blue-50 text-blue-700 hover:bg-blue-100">
+                                <i class="fas fa-globe mr-1"></i> Homepage
+                            </a>
+                        </div>
                     </div>
                     {% endif %}
                     
@@ -190,130 +324,20 @@
         <a href="javascript:history.back()" class="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 hover:text-indigo-600">
             <i class="fas fa-arrow-left mr-2"></i> {{ i18n.t('detail.back') }}
         </a>
-        <a href="/search?q={{ opportunity.source_type }}" class="inline-flex items-center px-4 py-2 text-sm font-medium text-indigo-600 hover:text-indigo-800">
+        <a href="/search?source={{ opportunity.source_type|urlencode }}" class="inline-flex items-center px-4 py-2 text-sm font-medium text-indigo-600 hover:text-indigo-800">
             {{ '更多来自' if i18n.is_zh() else 'More from' }} {{ opportunity.source_type }} <i class="fas fa-arrow-right ml-2"></i>
         </a>
     </div>
 </div>
 
-<!-- RAG Modal -->
-<div id="ragModal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onclick="closeRagModal()"></div>
-
-        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full h-[85vh] flex flex-col">
-            <div class="bg-indigo-600 px-4 py-3 sm:px-6 flex justify-between items-center">
-                <h3 class="text-lg leading-6 font-medium text-white">
-                    <i class="fas fa-magic mr-2"></i> {{ i18n.t('detail.generate_email') }}
-                </h3>
-                <button type="button" class="text-indigo-200 hover:text-white" onclick="closeRagModal()">
-                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
-            
-            <div class="flex-grow flex bg-gray-50">
-                <div class="w-1/3 border-r border-gray-200 bg-white p-6 overflow-y-auto">
-                    <div class="mb-6 bg-indigo-50 p-4 rounded-lg border border-indigo-100">
-                        <h4 class="text-xs font-bold text-indigo-800 uppercase tracking-wider mb-3">{{ '选项' if i18n.is_zh() else 'Options' }}</h4>
-                        <label class="flex items-center space-x-2 cursor-pointer mb-3">
-                            <input type="checkbox" id="useSocialMedia" class="form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300">
-                            <span class="text-xs text-gray-700">{{ '深度搜索（社交媒体）' if i18n.is_zh() else 'Deep Search (Social Media)' }}</span>
-                        </label>
-                        <button onclick="runRagGeneration()" class="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
-                            <i class="fas fa-rocket mr-2"></i> {{ '生成草稿' if i18n.is_zh() else 'Generate Draft' }}
-                        </button>
-                    </div>
-
-                    <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">{{ '上下文' if i18n.is_zh() else 'Context' }}</h4>
-                    <div id="ragContext" class="bg-gray-50 p-3 rounded text-xs text-gray-600 border border-gray-200 mb-4">
-                        {{ opportunity.description[:300] }}...
-                    </div>
-                    
-                    <div id="ragThinking" class="hidden">
-                        <div class="flex items-center space-x-2 text-sm text-indigo-600 animate-pulse">
-                            <i class="fas fa-spinner fa-spin"></i>
-                            <span>{{ i18n.t('common.loading') }}</span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="w-2/3 p-6 flex flex-col">
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700">{{ '主题' if i18n.is_zh() else 'Subject' }}</label>
-                        <input type="text" id="ragSubject" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-2 border">
-                    </div>
-                    
-                    <div class="flex-grow flex flex-col">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">{{ '邮件正文' if i18n.is_zh() else 'Email Body' }}</label>
-                        <textarea id="ragBody" class="flex-grow w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-3 border font-mono text-sm"></textarea>
-                    </div>
-                    
-                    <div class="mt-4 flex justify-end">
-                        <button onclick="copyDraft()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
-                            <i class="fas fa-copy mr-2"></i> {{ '复制' if i18n.is_zh() else 'Copy' }}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
 <script>
-const opportunityData = {
-    profName: "{{ opportunity.professor_name|default('Professor', true)|escape }}",
-    interests: "{{ opportunity.description[:200]|escape }}",
-    title: "{{ opportunity.title|escape }}",
-    source: "{{ opportunity.source_type }}"
-};
-
-function openRagWorkbench() {
-    document.getElementById('ragModal').classList.remove('hidden');
-    document.getElementById('ragSubject').value = "";
-    document.getElementById('ragBody').value = "";
-}
-
-async function runRagGeneration() {
-    const includeSocial = document.getElementById('useSocialMedia').checked;
-    
-    document.getElementById('ragThinking').classList.remove('hidden');
-    document.getElementById('ragBody').value = "{{ '生成中...' if i18n.is_zh() else 'Generating...' }}";
-    
-    const response = await fetch('/api/generate-rag-draft', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            student_profile: { name: "Student", interest: opportunityData.title },
-            professor_profile: { 
-                name: opportunityData.profName, 
-                recent_paper: opportunityData.title, 
-                snippet: opportunityData.interests,
-                source: opportunityData.source 
-            },
-            include_social_media: includeSocial
-        })
-    });
-    
-    const data = await response.json();
-    
-    document.getElementById('ragThinking').classList.add('hidden');
-    document.getElementById('ragSubject').value = data.draft.subject;
-    document.getElementById('ragBody').value = data.draft.body;
-}
-
-function closeRagModal() {
-    document.getElementById('ragModal').classList.add('hidden');
-}
-
-function copyDraft() {
-    const subject = document.getElementById('ragSubject').value;
-    const body = document.getElementById('ragBody').value;
-    navigator.clipboard.writeText(`Subject: ${subject}\n\n${body}`).then(() => {
-        alert("{{ '已复制！' if i18n.is_zh() else 'Copied!' }}");
-    });
-}
+const opportunityData = {{ {
+    'profName': opportunity.professor_name or 'Professor',
+    'interests': (opportunity.description or '')[:200],
+    'title': opportunity.title or '',
+    'source': opportunity.source_type or ''
+}|tojson }};
+const sourceUrl = {{ (opportunity.source_url or '')|tojson }};
 
 // Save toggle function
 async function toggleSave(oppId, btn) {
@@ -342,6 +366,80 @@ async function toggleSave(oppId, btn) {
     } catch (e) {
         console.error('Save failed:', e);
     }
+}
+
+async function runAIAnalysis() {
+    const interest = document.getElementById('aiInterestInput').value;
+    if (!interest) {
+        alert("{{ '请输入研究兴趣' if i18n.is_zh() else 'Please enter your research interest' }}");
+        return;
+    }
+
+    document.getElementById('aiAnalysisInitial').classList.add('hidden');
+    document.getElementById('aiAnalysisLoading').classList.remove('hidden');
+    document.getElementById('aiAnalysisResult').classList.add('hidden');
+
+    try {
+        const response = await fetch('/api/analyze-match', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query: interest,
+                opportunity_id: "{{ opportunity.id }}"
+            })
+        });
+
+        const data = await response.json();
+
+        document.getElementById('aiAnalysisLoading').classList.add('hidden');
+        document.getElementById('aiAnalysisResult').classList.remove('hidden');
+        document.getElementById('aiAnalysisInitial').classList.remove('hidden'); // Show input again for retry
+
+        document.getElementById('aiVerdict').textContent = data.verdict || "Analysis Complete";
+        document.getElementById('aiReasoning').textContent = data.reasoning || "No reasoning provided.";
+        document.getElementById('aiAction').textContent = data.suggested_action || "Check details";
+
+    } catch (e) {
+        console.error('AI Analysis failed:', e);
+        document.getElementById('aiAnalysisLoading').classList.add('hidden');
+        document.getElementById('aiAnalysisInitial').classList.remove('hidden');
+        alert("Analysis failed. Please try again.");
+    }
+}
+
+async function loadSourcePreview() {
+    const btn = document.getElementById('sourcePreviewBtn');
+    const box = document.getElementById('sourcePreviewBox');
+    const title = document.getElementById('sourcePreviewTitle');
+    const text = document.getElementById('sourcePreviewText');
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>{{ "加载中" if i18n.is_zh() else "Loading" }}';
+    box.classList.remove('hidden');
+    title.textContent = "{{ '公开网页摘录' if i18n.is_zh() else 'Public Web Excerpt' }}";
+    text.textContent = "{{ '正在尝试读取公开来源页面...' if i18n.is_zh() else 'Trying to read the public source page...' }}";
+
+    try {
+        const response = await fetch('/api/source-preview/{{ opportunity.id }}');
+        const data = await response.json();
+
+        if (data.ok) {
+            title.textContent = data.title || "{{ '公开网页摘录' if i18n.is_zh() else 'Public Web Excerpt' }}";
+            text.textContent = data.excerpt;
+            if (data.final_url && data.final_url !== sourceUrl) {
+                text.textContent += `\n\n{{ '最终跳转地址：' if i18n.is_zh() else 'Final URL: ' }}${data.final_url}`;
+            }
+        } else {
+            title.textContent = "{{ '无法内嵌原文' if i18n.is_zh() else 'Inline Preview Unavailable' }}";
+            text.textContent = data.reason || "{{ '该平台可能需要登录、禁止嵌入或阻止自动预览。请点击原文链接核验。' if i18n.is_zh() else 'This platform may require login, block embedding, or disallow automated previews. Please verify via the source link.' }}";
+        }
+    } catch (e) {
+        title.textContent = "{{ '无法内嵌原文' if i18n.is_zh() else 'Inline Preview Unavailable' }}";
+        text.textContent = "{{ '读取失败。请点击原文链接核验。' if i18n.is_zh() else 'Preview failed. Please verify via the source link.' }}";
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-file-alt mr-1.5"></i>{{ "重新加载摘录" if i18n.is_zh() else "Reload Excerpt" }}';
 }
 </script>
 {% endblock %}

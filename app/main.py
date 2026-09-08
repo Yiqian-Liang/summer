@@ -11,15 +11,23 @@ from fastapi import FastAPI, Request, Query, Body, HTTPException, Form, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 import uvicorn
 from typing import Optional, Dict, List
+from collections import Counter
+from typing import Literal
+from pydantic import BaseModel, Field
 import os
 import datetime
 import json
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from app.scrapers import AcademicScraper
 from app.matching import matcher
-from app.agents import ResearchAgent
+from app.agents import ResearchAgent, extract_email, generate_email_search_url, generate_homepage_search_url
 from app.rag import RAGWorkbench
 from app.database import (
     DB_NAME, init_db, get_db, 
@@ -30,21 +38,175 @@ from app.database import (
     init_user_tables, create_user, get_user_by_email, get_user_by_username,
     get_user_by_id, update_user_last_login, save_user_profile, get_user_profile,
     record_user_behavior, get_user_behaviors, save_opportunity as db_save_opportunity,
-    unsave_opportunity, get_user_saved, is_opportunity_saved
+    unsave_opportunity, get_user_saved, is_opportunity_saved,
+    # Password reset
+    create_password_reset_token, verify_reset_token, use_reset_token, update_user_password
 )
 from app.auth import (
     hash_password, verify_password, create_session, get_session, 
     destroy_session, get_current_user, validate_email, validate_username,
     validate_password, get_onboarding_options
 )
+from app.auth import require_user, require_csrf, csrf_token_for, revoke_user_sessions
 from app.recommender import recommender
 from app.i18n import I18n, LANGUAGES, DEFAULT_LANGUAGE
+from app.search_utils import (
+    SOURCE_ALIASES,
+    build_external_search_links,
+    detect_source_type,
+    normalize_source_filter,
+)
+from app.source_preview import fetch_source_preview
+from app.mail_routes import router as mail_router
+from app.mail_service import init_mail_tables
+from app.mail_oauth import router as mail_oauth_router
+from app.posts import router as posts_router, init_post_tables
 
 app = FastAPI(title="Summer Research Platform")
+app.include_router(mail_router)
+app.include_router(mail_oauth_router)
+app.include_router(posts_router)
+
+
+@app.middleware("http")
+async def private_workspace_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/mail" or request.url.path.startswith("/api/mail") or request.url.path in {"/api/generate-rag-draft", "/posts/mine", "/posts/new"} or request.url.path.endswith("/edit"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 # Cookie names
 SESSION_COOKIE = "session_token"
 LANG_COOKIE = "lang"
+
+SOURCE_COUNT_LABELS = [
+    ("university", "University/Lab"),
+    ("community", "站内招募"),
+    ("professor_site", "Professor forms"),
+    ("nsf", "NSF REU"),
+    ("pathways", "Pathways"),
+    ("academicjobs", "AcademicJobsOnline"),
+    ("euraxess", "Euraxess"),
+    ("findaphd", "FindAPhD"),
+    ("nature_careers", "Nature Careers"),
+    ("jobs_ac_uk", "jobs.ac.uk"),
+    ("mitacs", "Mitacs"),
+    ("daad", "DAAD"),
+    ("cnrs", "CNRS"),
+    ("inria", "INRIA"),
+    ("max_planck", "Max Planck"),
+    ("linkedin", "LinkedIn"),
+    ("twitter", "X/Twitter"),
+    ("xiaohongshu", "小红书"),
+    ("wechat", "微信"),
+    ("zhihu", "知乎"),
+    ("bilibili", "Bilibili"),
+    ("weibo", "微博"),
+    ("tieba", "贴吧"),
+    ("discord", "Discord"),
+    ("instagram", "Instagram"),
+    ("facebook", "Facebook"),
+    ("tiktok", "TikTok"),
+    ("scholar", "Scholar"),
+    ("other", "Other"),
+]
+
+
+def validated_source(source: Optional[str]) -> Optional[str]:
+    source = normalize_source_filter(source)
+    if source and source not in set(SOURCE_ALIASES.values()) | {"other"}:
+        raise HTTPException(status_code=422, detail="Unknown search source")
+    return source
+
+
+def sync_live_opportunities(query: str, source: Optional[str], refresh: bool) -> Dict:
+    """Collect and ingest once; the page and API share the same failure handling."""
+    from app.scheduler import OpportunityProcessor
+
+    report = scraper_engine.search_all_sources(
+        query, True, source, refresh, return_status=True,
+    )
+    items = report.pop("results")
+    processor = OpportunityProcessor()
+    report["synced_count"] = 0
+    rejected = 0
+    for item in items:
+        try:
+            source_type = detect_source_type(
+                item.get("source_type") or item.get("source", ""),
+                item.get("url") or item.get("recent_paper") or item.get("link") or "",
+            )
+            if source == "professor_site" and source_type in {"university", "other", "professor_site"}:
+                source_type = "professor_site"
+            if source and source_type != source:
+                continue
+            normalized = processor.normalize_item(item, source_type)
+            upsert_opportunity(normalized)
+            report["synced_count"] += 1
+        except Exception:
+            rejected += 1
+            logger.warning("Skipped an invalid live search result")
+    if rejected:
+        report["status"] = "partial" if report["synced_count"] else "error"
+    return report
+
+
+async def run_opportunity_search(
+    query: str, source: Optional[str], page: int = 1, limit: int = 20,
+    refresh: bool = False, live: bool = True,
+) -> Dict:
+    """Refresh, verify, rank, and finally paginate for both search entry points."""
+    enabled = live and scraper_engine.has_live_search_credentials(query, source)
+    report = {
+        "status": "local" if enabled else "unavailable", "cached": False,
+        "providers": scraper_engine.live_search_providers(query, source) if enabled else [],
+        "failed_sources": [], "synced_count": 0,
+    }
+    if enabled and page == 1:
+        try:
+            report = await run_in_threadpool(sync_live_opportunities, query, source, refresh)
+        except Exception:
+            logger.warning("Live search unavailable; keeping local results")
+            report["status"] = "error"
+
+    candidates = await run_in_threadpool(search_opportunities_fts, query, None, source)
+    all_results = candidates if not source else await run_in_threadpool(
+        search_opportunities_fts, query, None,
+    )
+    source_counter = Counter(
+        source_key for row in all_results
+        for source_key in (row.get("matched_sources") or [row.get("source_type") or "other"])
+    )
+    if source:
+        source_counter[source] = len(candidates)
+    # ponytail: semantic reranking is capped at 200; all remaining verified
+    # matches remain pageable. Increase the cap only after measuring model cost.
+    head = [dict(row, text_for_matching=" ".join(
+        str(row.get(field) or "") for field in ("title", "description", "professor_name")
+    )) for row in candidates[:200]]
+    try:
+        head = await run_in_threadpool(matcher.rank_candidates, query, head)
+    except Exception:
+        logger.warning("Semantic ranking unavailable; keeping evidence-based order")
+    ranked = head + candidates[200:]
+    offset = (page - 1) * limit
+    results = ranked[offset:offset + limit]
+    for result in results:
+        result.pop("text_for_matching", None)
+    return {
+        "results": results,
+        "total_count": len(ranked),
+        "source_hit_total": len(all_results),
+        "source_hit_counts": [
+            {"source": key, "label": label, "count": source_counter.get(key, 0)}
+            for key, label in SOURCE_COUNT_LABELS
+        ],
+        "live_search_enabled": enabled,
+        "live_search_attempted": enabled and page == 1,
+        "live_result_count": report["synced_count"],
+        "live_search_providers": report["providers"],
+        "live_search": report,
+    }
 
 
 def get_current_user_from_request(request: Request) -> Optional[Dict]:
@@ -73,6 +235,13 @@ def get_i18n(request: Request) -> I18n:
     """Get i18n helper for templates."""
     return I18n(get_lang_from_request(request))
 
+
+def local_redirect(value: str) -> str:
+    """Login destinations must remain in this application."""
+    if value and value.startswith("/") and not value.startswith("//") and not any(char in value for char in ("\\", "\r", "\n")):
+        return value
+    return "/"
+
 # Create static directory if not exists
 os.makedirs("app/static", exist_ok=True)
 
@@ -93,6 +262,16 @@ async def startup_event():
     """Initialize database on startup."""
     init_db()
     init_user_tables()
+    init_mail_tables()
+    init_post_tables()
+    media_data_path = os.getenv("MEDIACRAWLER_DATA_PATH", "").strip()
+    if media_data_path:
+        try:
+            from app.mediacrawler_import import import_mediacrawler_path
+            stats = await run_in_threadpool(import_mediacrawler_path, media_data_path)
+            logger.info("MediaCrawler startup import: %s", stats)
+        except Exception as error:
+            logger.error("MediaCrawler startup import failed: %s", error)
 
 
 # ============== Language Routes ==============
@@ -104,7 +283,9 @@ async def set_language(request: Request, lang: str):
         lang = DEFAULT_LANGUAGE
     
     # Get the referer to redirect back
-    referer = request.headers.get("referer", "/")
+    from urllib.parse import urlsplit
+    referer_url = urlsplit(request.headers.get("referer", "/"))
+    referer = local_redirect(referer_url.path + ("?" + referer_url.query if referer_url.query else ""))
     
     response = RedirectResponse(url=referer, status_code=302)
     response.set_cookie(
@@ -124,7 +305,7 @@ async def login_page(request: Request, next: str = "/"):
     """Login page."""
     user = get_current_user_from_request(request)
     if user:
-        return RedirectResponse(url=next, status_code=302)
+        return RedirectResponse(url=local_redirect(next), status_code=302)
     i18n = get_i18n(request)
     return templates.TemplateResponse("auth/login.html", {
         "request": request,
@@ -137,7 +318,6 @@ async def login_page(request: Request, next: str = "/"):
 @app.post("/login")
 async def login_submit(
     request: Request,
-    response: Response,
     email: str = Form(...),
     password: str = Form(...),
     next: str = Form("/"),
@@ -166,6 +346,8 @@ async def login_submit(
         })
     
     # Create session
+    if not user["password_hash"].startswith("pbkdf2_sha256:"):
+        update_user_password(user["id"], hash_password(password))
     token = create_session(user["id"], {
         "id": user["id"],
         "email": user["email"],
@@ -177,12 +359,13 @@ async def login_submit(
     update_user_last_login(user["id"])
     
     # Set cookie and redirect
-    redirect_url = "/onboarding" if not user["onboarding_complete"] else next
+    redirect_url = "/onboarding" if not user["onboarding_complete"] else local_redirect(next)
     redirect_response = RedirectResponse(url=redirect_url, status_code=302)
     redirect_response.set_cookie(
         key=SESSION_COOKIE,
         value=token,
         httponly=True,
+        secure=request.url.scheme == "https",
         max_age=60 * 60 * 24 * 7,  # 7 days
         samesite="lax"
     )
@@ -274,6 +457,7 @@ async def register_submit(
         key=SESSION_COOKIE,
         value=token,
         httponly=True,
+        secure=request.url.scheme == "https",
         max_age=60 * 60 * 24 * 7,
         samesite="lax"
     )
@@ -292,6 +476,128 @@ async def logout(request: Request):
     return response
 
 
+@app.get("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_page(request: Request):
+    """Forgot password page."""
+    i18n = get_i18n(request)
+    return templates.TemplateResponse("auth/forgot_password.html", {
+        "request": request,
+        "i18n": i18n,
+        "languages": LANGUAGES,
+    })
+
+
+@app.post("/forgot-password")
+async def forgot_password_submit(request: Request, email: str = Form(...)):
+    """Handle forgot password form submission."""
+    i18n = get_i18n(request)
+    if os.getenv("ENABLE_DEV_PASSWORD_RESET", "0") != "1":
+        return templates.TemplateResponse("auth/forgot_password.html", {
+            "request": request, "i18n": i18n, "languages": LANGUAGES,
+            "error": "网站尚未配置账号恢复邮件，请联系管理员协助恢复。" if i18n.is_zh() else "Account recovery email is not configured. Contact the site administrator.",
+        }, status_code=503)
+    user = get_user_by_email(email)
+
+    # Always show success message to prevent email enumeration
+    success_msg = "开发模式：如果账号存在，重置链接已输出到本机服务控制台；未发送邮件。" if i18n.is_zh() else "Development mode: if the account exists, a reset link is in the local server console. No email was sent."
+
+    if user:
+        # Generate reset token
+        token = create_password_reset_token(user["id"])
+        reset_link = f"http://localhost:8000/reset-password?token={token}"
+
+        # In production, send email here
+        # For now, print to console (development mode)
+        print(f"\n{'='*50}")
+        print(f"PASSWORD RESET LINK for {email}:")
+        print(f"{reset_link}")
+        print(f"{'='*50}\n")
+        logger.info(f"Password reset requested for {email}. Token generated.")
+
+    return templates.TemplateResponse("auth/forgot_password.html", {
+        "request": request,
+        "i18n": i18n,
+        "languages": LANGUAGES,
+        "success": success_msg,
+    })
+
+
+@app.get("/reset-password", response_class=HTMLResponse)
+async def reset_password_page(request: Request, token: str = Query(...)):
+    """Reset password page."""
+    i18n = get_i18n(request)
+
+    # Verify token
+    user_id = verify_reset_token(token)
+    if not user_id:
+        return templates.TemplateResponse("auth/reset_password.html", {
+            "request": request,
+            "i18n": i18n,
+            "languages": LANGUAGES,
+            "error": i18n.t("auth.invalid_reset_link") if i18n.is_zh() else "Invalid or expired reset link.",
+            "token": None,
+        })
+
+    return templates.TemplateResponse("auth/reset_password.html", {
+        "request": request,
+        "i18n": i18n,
+        "languages": LANGUAGES,
+        "token": token,
+    })
+
+
+@app.post("/reset-password")
+async def reset_password_submit(
+    request: Request,
+    token: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+):
+    """Handle reset password form submission."""
+    i18n = get_i18n(request)
+
+    # Verify token
+    user_id = verify_reset_token(token)
+    if not user_id:
+        return templates.TemplateResponse("auth/reset_password.html", {
+            "request": request,
+            "i18n": i18n,
+            "languages": LANGUAGES,
+            "error": i18n.t("auth.invalid_reset_link") if i18n.is_zh() else "Invalid or expired reset link.",
+            "token": None,
+        })
+
+    # Validate password
+    valid, msg = validate_password(password)
+    if not valid:
+        return templates.TemplateResponse("auth/reset_password.html", {
+            "request": request,
+            "i18n": i18n,
+            "languages": LANGUAGES,
+            "error": msg,
+            "token": token,
+        })
+
+    if password != password_confirm:
+        error_msg = "两次输入的密码不一致" if i18n.is_zh() else "Passwords do not match"
+        return templates.TemplateResponse("auth/reset_password.html", {
+            "request": request,
+            "i18n": i18n,
+            "languages": LANGUAGES,
+            "error": error_msg,
+            "token": token,
+        })
+
+    # Update password
+    password_hash = hash_password(password)
+    update_user_password(user_id, password_hash)
+    use_reset_token(token)
+    revoke_user_sessions(user_id)
+
+    # Redirect to login with success message
+    return RedirectResponse(url="/login?reset=success", status_code=302)
+
+
 @app.get("/onboarding", response_class=HTMLResponse)
 async def onboarding_page(request: Request):
     """Onboarding page for new users to select interests."""
@@ -301,6 +607,13 @@ async def onboarding_page(request: Request):
     
     # Get existing profile if any
     profile = get_user_profile(user["id"])
+    if profile:
+        for field in ("target_types", "majors", "research_fields", "region_preferences"):
+            try:
+                value = json.loads(profile.get(field) or "[]")
+                profile[field] = value if isinstance(value, list) else []
+            except (TypeError, ValueError):
+                profile[field] = []
     options = get_onboarding_options()
     i18n = get_i18n(request)
     
@@ -363,16 +676,6 @@ async def home(request: Request, page: int = Query(1, ge=1)):
     limit = 20
     offset = (page - 1) * limit
     
-    # Get more opportunities for personalized ranking (if user is logged in)
-    fetch_limit = 100 if user else limit
-    
-    opportunities = get_opportunities(
-        limit=fetch_limit,
-        offset=0,
-        min_quality=0,
-        order_by="quality_score desc, updated_at desc"
-    )
-    
     # If user is logged in, get their profile for personalization
     if user:
         profile = get_user_profile(user["id"])
@@ -381,22 +684,45 @@ async def home(request: Request, page: int = Query(1, ge=1)):
         # Record page view behavior
         record_user_behavior(user["id"], "view", "home", "page")
         
-        # Get personalized ranking
-        if profile:
-            opportunities = recommender.rank_opportunities(opportunities, profile, behaviors)
-            recommended_searches = recommender.get_recommended_searches(profile)
+    total_count = get_opportunity_count()
+    opportunities = get_opportunities(
+        limit=total_count if profile else limit,
+        offset=0 if profile else offset,
+        order_by="quality_score desc, updated_at desc, id",
+    )
+    if profile:
+        opportunities = recommender.rank_opportunities(opportunities, profile, behaviors)[offset:offset + limit]
+        recommended_searches = recommender.get_recommended_searches(profile)
     
-    # Apply pagination after ranking
-    total_count = len(opportunities) if user else get_opportunity_count()
-    opportunities = opportunities[offset:offset + limit]
-    
-    # Parse hiring_signals JSON for template
+    # Parse hiring_signals JSON and generate tags for template
     for opp in opportunities:
         try:
             opp["hiring_signals_list"] = json.loads(opp.get("hiring_signals") or "[]")
         except:
             opp["hiring_signals_list"] = []
         
+        # Generate tags and research focus
+        try:
+            analysis = research_agent.analyze_match("", opp)
+            opp["tags"] = analysis.get("tags", [])
+            opp["research_focus"] = analysis.get("research_focus", "")
+        except:
+            opp["tags"] = []
+            opp["research_focus"] = ""
+
+        # Extract email from description or generate search URL
+        extracted_email = extract_email(opp.get("description", ""))
+        opp["professor_email"] = extracted_email
+        if not extracted_email and opp.get("professor_name"):
+            opp["email_search_url"] = generate_email_search_url(
+                opp.get("professor_name"),
+                opp.get("university")
+            )
+            opp["homepage_search_url"] = generate_homepage_search_url(
+                opp.get("professor_name"),
+                opp.get("university")
+            )
+
         # Check if saved by user
         if user:
             opp["is_saved"] = is_opportunity_saved(user["id"], opp["id"])
@@ -425,12 +751,15 @@ async def home(request: Request, page: int = Query(1, ge=1)):
 @app.get("/search", response_class=HTMLResponse)
 async def search_page(
     request: Request, 
-    q: str = Query(None, description="Search query"),
-    page: int = Query(1, ge=1)
+    q: str = Query(None, max_length=300, description="Search query"),
+    source: str = Query(None, description="Source filter"),
+    page: int = Query(1, ge=1),
+    refresh: bool = Query(False, description="Bypass the live-search cache"),
 ):
     """
     Unified search page - aggregates results from all platforms,
     ranks them together by relevance (like a meta search engine).
+    If no query provided, browses latest opportunities.
     """
     user = get_current_user_from_request(request)
     
@@ -438,109 +767,81 @@ async def search_page(
     offset = (page - 1) * limit
     results = []
     total_count = 0
-    
+    source_hit_counts = []
+    source_hit_total = 0
+
+    q = (q or "").strip()
+    filter_source = validated_source(source)
+    source = filter_source
+    search_shortcuts = build_external_search_links(q, filter_source)
+    search_data = {}
+    live_search_enabled = scraper_engine.has_live_search_credentials(q, filter_source)
+    live_search_attempted = False
+    live_result_count = 0
+    live_search_providers = scraper_engine.live_search_providers(q, filter_source) if live_search_enabled else []
+
     if q:
-        # Track search behavior
         if user:
             record_user_behavior(user["id"], "search", q, "search")
-        # First, try database search
-        db_results = search_opportunities_fts(q, limit=100)
-        
-        # Always do live scraping to get fresh results from multiple platforms
-        try:
-            from app.scheduler import OpportunityProcessor
-            processor = OpportunityProcessor()
-            
-            # Live search from all scrapers
-            live_results = scraper_engine.search_all_sources(q)
-            
-            # Process and store each result
-            for item in live_results:
-                # Detect source type from the source field
-                source_str = item.get("source", "").lower()
-                
-                if "scholar" in source_str:
-                    source_type = "scholar"
-                elif "linkedin" in source_str:
-                    source_type = "linkedin"
-                elif "xiaohongshu" in source_str or "小红书" in source_str or "rednote" in source_str:
-                    source_type = "xiaohongshu"
-                elif "wechat" in source_str or "微信" in source_str or "weixin" in source_str:
-                    source_type = "wechat"
-                elif "twitter" in source_str or "x.com" in source_str:
-                    source_type = "twitter"
-                elif "instagram" in source_str:
-                    source_type = "instagram"
-                elif "zhihu" in source_str or "知乎" in source_str:
-                    source_type = "zhihu"
-                elif "nsf" in source_str:
-                    source_type = "nsf"
-                elif "discord" in source_str:
-                    source_type = "discord"
-                else:
-                    source_type = "other"
-                
-                try:
-                    normalized = processor.normalize_item(item, source_type)
-                    upsert_opportunity(normalized)
-                except Exception as e:
-                    print(f"Error processing item: {e}")
-            
-            # Re-fetch from DB to get all results including newly added
-            db_results = search_opportunities_fts(q, limit=100)
-            
-        except Exception as e:
-            print(f"Live search error: {e}")
-            import traceback
-            traceback.print_exc()
-        
-        # Rank all results together
-        if db_results:
-            # Prepare candidates for ranking
-            candidates = []
-            for opp in db_results:
-                cand = {**opp}
-                cand["text_for_matching"] = f"{opp.get('title', '')} {opp.get('description', '')} {opp.get('professor_name', '')}"
-                # Use quality_score as default match_score if not set
-                if "match_score" not in cand:
-                    cand["match_score"] = cand.get("quality_score", 50)
-                candidates.append(cand)
-            
-            # Try semantic ranking (may fail if model not loaded)
+        search_data = await run_opportunity_search(q, filter_source, page, limit, refresh)
+        results = search_data["results"]
+        total_count = search_data["total_count"]
+    else:
+        # Browse Mode (No Query)
+        # Fetch from DB based on filters
+        results = get_opportunities(
+            limit=limit,
+            offset=offset,
+            source_type=filter_source,
+            order_by="updated_at desc"
+        )
+
+        if not results and filter_source and page == 1 and live_search_enabled:
+            default_q = "暑研" if filter_source in {"xiaohongshu", "wechat", "zhihu", "bilibili", "weibo", "tieba"} else "summer research"
             try:
-                ranked = matcher.rank_candidates(q, candidates)
-            except:
-                # Fallback: sort by quality_score
-                ranked = sorted(candidates, key=lambda x: x.get("quality_score", 0), reverse=True)
-            
-            # Ensure all results have match_score
-            for r in ranked:
-                if "match_score" not in r or r["match_score"] is None:
-                    r["match_score"] = r.get("quality_score", 50)
-            
-            total_count = len(ranked)
-            results = ranked[offset:offset + limit]
-            
-            # Add AI analysis for top results
-            for result in results[:5]:
-                try:
-                    analysis = research_agent.analyze_match(q, result)
-                    result["agent_analysis"] = analysis.get("reasoning", "")
-                except:
-                    result["agent_analysis"] = ""
-            
-            # Parse hiring_signals JSON and check saved status
-            for result in results:
-                try:
-                    result["hiring_signals_list"] = json.loads(result.get("hiring_signals") or "[]")
-                except:
-                    result["hiring_signals_list"] = []
-                
-                # Check if saved by user
-                if user:
-                    result["is_saved"] = is_opportunity_saved(user["id"], result["id"])
-                else:
-                    result["is_saved"] = False
+                await run_in_threadpool(sync_live_opportunities, default_q, filter_source, refresh)
+                results = get_opportunities(limit=limit, offset=offset, source_type=filter_source, order_by="updated_at desc")
+            except Exception:
+                logger.warning("Live source unavailable while browsing")
+
+        total_count = get_opportunity_count(source_type=filter_source)
+        
+        for result in results:
+            result["match_score"] = result.get("quality_score", 50)
+
+    # Common Post-Processing for both Search and Browse
+    for result in results:
+        try:
+            analysis = research_agent.analyze_match(q, result)
+            result["tags"] = analysis.get("tags", [])
+            result["research_focus"] = analysis.get("research_focus", "")
+        except Exception:
+            result["tags"] = []
+            result["research_focus"] = ""
+        # Extract email from description or generate search URL
+        extracted_email = extract_email(result.get("description", ""))
+        result["professor_email"] = extracted_email
+        if not extracted_email and result.get("professor_name"):
+            result["email_search_url"] = generate_email_search_url(
+                result.get("professor_name"),
+                result.get("university")
+            )
+            result["homepage_search_url"] = generate_homepage_search_url(
+                result.get("professor_name"),
+                result.get("university")
+            )
+
+        # Parse hiring_signals JSON and check saved status
+        try:
+            result["hiring_signals_list"] = json.loads(result.get("hiring_signals") or "[]")
+        except:
+            result["hiring_signals_list"] = []
+        
+        # Check if saved by user
+        if user:
+            result["is_saved"] = is_opportunity_saved(user["id"], result["id"])
+        else:
+            result["is_saved"] = False
     
     total_pages = (total_count + limit - 1) // limit if total_count > 0 else 1
     i18n = get_i18n(request)
@@ -549,12 +850,22 @@ async def search_page(
         "request": request,
         "user": user,
         "query": q or "",
+        "source": source,
         "results": results,
         "total_count": total_count,
         "current_page": page,
         "total_pages": total_pages,
         "has_prev": page > 1,
         "has_next": page < total_pages,
+        "search_shortcuts": search_shortcuts,
+        "source_hit_counts": source_hit_counts,
+        "source_hit_total": source_hit_total,
+        "live_search_enabled": live_search_enabled,
+        "live_search_attempted": live_search_attempted,
+        "live_result_count": live_result_count,
+        "live_search_providers": live_search_providers,
+        "live_search": {"status": "local"},
+        **{key: value for key, value in search_data.items() if key != "results"},
         "i18n": i18n,
         "languages": LANGUAGES,
     })
@@ -570,6 +881,8 @@ async def opportunity_detail(request: Request, opp_id: str):
     
     if not opportunity:
         raise HTTPException(status_code=404, detail="Opportunity not found")
+    if opportunity.get("provider") == "user_post":
+        return RedirectResponse(f"/posts/{opp_id}", status_code=302)
     
     # Track click behavior
     if user:
@@ -601,7 +914,7 @@ async def opportunity_detail(request: Request, opp_id: str):
 
 @app.get("/api/opportunities")
 async def api_get_opportunities(
-    limit: int = Query(20, le=100),
+    limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     source_type: str = Query(None),
     min_quality: int = Query(0, ge=0, le=100),
@@ -619,61 +932,99 @@ async def api_get_opportunities(
     return JSONResponse({
         "opportunities": opportunities,
         "count": len(opportunities),
-        "total": get_opportunity_count(),
+        "total": get_opportunity_count(source_type=source_type, min_quality=min_quality),
     })
 
 
 @app.get("/api/search")
 async def api_search(
-    q: str = Query(..., description="Search query"),
-    limit: int = Query(20, le=100),
+    q: str = Query(..., min_length=1, max_length=300, description="Search query"),
+    limit: int = Query(20, ge=1, le=100),
+    source: str = Query(None, description="Source filter"),
+    page: int = Query(1, ge=1),
+    refresh: bool = Query(False),
+    live: bool = Query(True, description="Supplement the first page with live sources"),
 ):
-    """
-    API endpoint for semantic search.
-    """
-    results = search_opportunities_fts(q, limit=limit)
-    
-    if results:
-        # Rank by semantic similarity
-        candidates = [
-            {**r, "text_for_matching": f"{r.get('title', '')} {r.get('description', '')}"}
-            for r in results
-        ]
-        results = matcher.rank_candidates(q, candidates)
-    
+    """The same verified, paginated, multi-platform search used by the website."""
+    q = q.strip()
+    if not q:
+        raise HTTPException(status_code=422, detail="Search query must not be blank")
+    filter_source = validated_source(source)
+    data = await run_opportunity_search(q, filter_source, page, limit, refresh, live)
     return JSONResponse({
-        "query": q,
-        "results": results,
-        "count": len(results),
+        "query": q, "results": data["results"], "count": len(data["results"]),
+        "total": data["total_count"], "page": page,
+        "total_pages": (data["total_count"] + limit - 1) // limit,
+        "source": filter_source, "source_counts": data["source_hit_counts"],
+        "live_search": data["live_search"],
     })
 
 
+class DraftRequest(BaseModel):
+    opportunity_id: str = Field(min_length=1, max_length=100)
+    student_name: str = Field(default="", max_length=100)
+    school: str = Field(default="", max_length=200)
+    interest: str = Field(default="", max_length=500)
+    resume_text: str = Field(default="", max_length=6000)
+    focus_area: str = Field(default="", max_length=500)
+    tone: Literal["professional", "enthusiastic", "concise"] = "professional"
+    language: Literal["zh", "en"] = "en"
+    use_ai: bool = False
+    include_social_media: bool = False
+
+
+@app.get("/mail", response_class=HTMLResponse)
+async def mail_page(request: Request, opportunity: str = Query(None, max_length=100), draft: int = Query(None, ge=1)):
+    user = get_current_user_from_request(request)
+    if not user:
+        from urllib.parse import quote
+        return RedirectResponse("/login?next=" + quote(str(request.url.path) + ("?" + request.url.query if request.url.query else ""), safe=""), status_code=302)
+    item = get_opportunity_by_id(opportunity) if opportunity else None
+    if opportunity and not item:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    if item:
+        item["professor_email"] = item.get("contact_email") or extract_email(item.get("description", "")) or ""
+    return templates.TemplateResponse("mail.html", {
+        "request": request, "user": user, "opportunity": item,
+        "draft_id": draft, "capabilities": rag_workbench.drafting_capabilities(),
+        "csrf_token": csrf_token_for(request), "i18n": get_i18n(request), "languages": LANGUAGES,
+    })
+
+
+@app.get("/api/mail/capabilities")
+async def mail_capabilities(request: Request):
+    require_user(request)
+    return rag_workbench.drafting_capabilities()
+
+
+@app.get("/api/mail/context/{opportunity_id}")
+async def mail_context(opportunity_id: str, request: Request):
+    require_user(request)
+    item = get_opportunity_by_id(opportunity_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    item["professor_email"] = item.get("contact_email") or extract_email(item.get("description", "")) or ""
+    return {"opportunity": item}
+
+
+@app.post("/api/mail/generate")
 @app.post("/api/generate-rag-draft")
-async def generate_rag_draft(payload: Dict = Body(...)):
-    """
-    API Endpoint for Context-Aware RAG Drafting.
-    Uses app/rag.py logic to create citations and analyze hiring signals.
-    """
-    student_profile = payload.get("student_profile", {})
-    professor_profile = payload.get("professor_profile", {})
-    include_social_media = payload.get("include_social_media", False)
-    
-    draft_data = rag_workbench.generate_context_aware_draft(
-        student_profile, professor_profile, include_social_media
+async def generate_rag_draft(request: Request, payload: DraftRequest):
+    user = require_csrf(request)
+    opportunity = get_opportunity_by_id(payload.opportunity_id)
+    if not opportunity:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    draft_data = await run_in_threadpool(
+        rag_workbench.generate_context_aware_draft,
+        {"name": payload.student_name.strip() or user["username"], "school": payload.school,
+         "interest": payload.interest},
+        {"name": opportunity.get("professor_name") or "", "title": opportunity["title"],
+         "snippet": opportunity.get("description") or "", "source_url": opportunity.get("source_url") or ""},
+        include_social_media=payload.include_social_media,
+        resume_text=payload.resume_text, tone=payload.tone, focus_area=payload.focus_area,
+        use_ai=payload.use_ai, language=payload.language,
     )
-    
-    # Log draft to DB
-    db = get_db()
-    db["email_drafts"].insert({
-        "student_name": student_profile.get("name", "Student"),
-        "professor_name": professor_profile.get("name", "Unknown"),
-        "professor_email": professor_profile.get("email", ""),
-        "content": draft_data["body"],
-        "status": "rag_generated",
-        "created_at": datetime.datetime.now().isoformat()
-    })
-    
-    return JSONResponse({"draft": draft_data})
+    return {"draft": draft_data, "recipient": opportunity.get("contact_email") or extract_email(opportunity.get("description", "")) or ""}
 
 
 @app.post("/api/collect")
@@ -689,13 +1040,29 @@ async def trigger_collection(
     scheduler = DataCollectionScheduler()
     
     if query:
-        stats = scheduler.run_collection_job(query)
+        stats = await run_in_threadpool(scheduler.run_collection_job, query)
     else:
         # Run with just a few default queries for quick update
         scheduler.queries = scheduler.queries[:3]
-        stats = scheduler.run_collection_job()
+        stats = await run_in_threadpool(scheduler.run_collection_job)
     
     return JSONResponse(stats)
+
+
+@app.post("/api/analyze-match")
+async def analyze_match_api(payload: Dict = Body(...)):
+    """
+    Analyzes match using LLM.
+    """
+    query = payload.get("query", "")
+    opp_id = payload.get("opportunity_id")
+
+    opportunity = get_opportunity_by_id(opp_id)
+    if not opportunity:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    analysis = await run_in_threadpool(research_agent.analyze_match, query, opportunity, use_llm=True)
+    return JSONResponse(analysis)
 
 
 @app.get("/api/stats")
@@ -710,7 +1077,13 @@ async def get_stats():
     # Count by source
     source_counts = {}
     try:
-        for row in db.execute("SELECT source_type, COUNT(*) as cnt FROM opportunities GROUP BY source_type").fetchall():
+        for row in db.execute("""
+            SELECT source_type, COUNT(*) as cnt
+            FROM opportunities
+            WHERE (source_url LIKE 'http://%' OR source_url LIKE 'https://%')
+              AND (coalesce(provider, '') != 'user_post' OR (post_status = 'published' AND coalesce(post_kind, 'recruitment') = 'recruitment'))
+            GROUP BY source_type
+        """).fetchall():
             source_counts[row[0]] = row[1]
     except:
         pass
@@ -720,6 +1093,20 @@ async def get_stats():
         "by_source": source_counts,
         "last_updated": datetime.datetime.now().isoformat(),
     })
+
+
+@app.get("/api/source-preview/{opp_id}")
+async def source_preview_api(opp_id: str):
+    """
+    Fetch a short, public excerpt from an opportunity source URL.
+    Does not generate content and does not mirror full posts/pages.
+    """
+    opportunity = get_opportunity_by_id(opp_id)
+    if not opportunity:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    preview = await run_in_threadpool(fetch_source_preview, opportunity.get("source_url", ""))
+    return JSONResponse(preview)
 
 
 # ============== User API Routes ==============

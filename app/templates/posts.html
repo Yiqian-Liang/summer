@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ '我的帖子' if mine else '科研社区' }} - {{ i18n.t('site.name') }}{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
+        <div>
+            <p class="text-sm text-indigo-600 font-medium mb-2">暑研通 · 社区</p>
+            <h1 class="text-3xl font-bold text-gray-900">{{ '我的帖子' if mine else '科研社区' }}</h1>
+            <p class="text-gray-600 mt-2">{{ '管理草稿、更新帖子，或在招满后下架招募。' if mine else '找研究机会，分享申请经历，一起讨论科研与成长。' }}</p>
+        </div>
+        <a href="/posts/new" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-lg font-medium">写帖子</a>
+    </div>
+    <div class="flex flex-wrap items-center gap-4 mb-6 border-b border-gray-200 pb-4">
+        <a href="/posts" class="{{ 'text-indigo-600 font-semibold' if not mine else 'text-gray-600' }}">全部帖子</a>
+        <a href="/posts/mine" class="{{ 'text-indigo-600 font-semibold' if mine else 'text-gray-600' }}">我的帖子</a>
+        <span class="text-sm text-gray-500 ml-auto">共 {{ total }} 条</span>
+    </div>
+    <form method="get" class="flex flex-wrap gap-3 mb-6">
+        <label for="post-kind-filter" class="sr-only">帖子类型</label>
+        <select id="post-kind-filter" name="kind" class="border border-gray-300 bg-white rounded-lg px-3 py-2">
+            {% for value, label in [('', '全部类型'), ('recruitment', '招募'), ('experience', '经验分享'), ('discussion', '讨论交流')] %}
+            <option value="{{ value }}" {% if kind == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <label for="post-query" class="sr-only">搜索帖子</label>
+        <input id="post-query" type="search" name="q" value="{{ query }}" maxlength="300" placeholder="搜索标题、正文或学校" class="flex-1 min-w-40 border border-gray-300 rounded-lg px-3 py-2">
+        <button class="bg-indigo-600 text-white px-5 py-2 rounded-lg hover:bg-indigo-700">搜索</button>
+    </form>
+    {% if not mine %}
+    <p class="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">社区帖子由用户自行发布，发布者身份与机构归属尚未核验；请通过机构官网确认招募信息。</p>
+    {% endif %}
+    <div class="space-y-4">
+        {% for post in posts %}
+        <article class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+            <div class="flex flex-wrap items-center gap-2 text-xs mb-3">
+                <span class="rounded-full px-2 py-1 bg-indigo-50 text-indigo-700">{{ {'recruitment': '社区招募', 'experience': '经验分享', 'discussion': '讨论交流'}.get(post.post_kind, '社区招募') }}</span>
+                <span class="rounded-full px-2 py-1 bg-amber-50 text-amber-800">发布者未核验</span>
+                {% if mine %}<span class="rounded-full px-2 py-1 bg-gray-100 text-gray-700">{{ {'draft': '草稿 · 仅自己可见', 'published': '已发布', 'closed': '已下架'}.get(post.post_status, '草稿') }}</span>{% endif %}
+            </div>
+            <h2 class="text-xl font-semibold text-gray-900 break-words"><a class="hover:text-indigo-600" href="{{ '/posts/' ~ post.id if post.post_status == 'published' else '/posts/' ~ post.id ~ '/edit' }}">{{ post.title }}</a></h2>
+            {% if post.post_kind == 'recruitment' or post.university %}<p class="text-sm text-gray-600 mt-2">{{ post.university or '机构待填写' }}{% if post.professor_name %} · {{ post.professor_name }}{% endif %}</p>{% endif %}
+            <p class="text-gray-600 mt-3 whitespace-pre-line break-words">{{ (post.description or '正文待填写')[:220] }}{% if post.description and post.description|length > 220 %}…{% endif %}</p>
+            <div class="flex flex-wrap items-center gap-3 mt-4 text-sm text-gray-500">
+                <span>发布账号：{{ post.author_name or '社区用户' }}</span>
+                {% if post.published_at %}<span>发布于 {{ post.published_at[:10] }}</span>{% endif %}
+                {% if post.deadline %}<span>截止 {{ post.deadline }}</span>{% endif %}
+                {% if mine %}<a href="/posts/{{ post.id }}/edit" class="ml-auto text-indigo-600 hover:underline font-medium">编辑与管理</a>{% endif %}
+            </div>
+        </article>
+        {% else %}
+        <div class="text-center bg-white border border-dashed border-gray-300 rounded-xl py-16 px-6">
+            <h2 class="text-lg font-semibold text-gray-800">{{ '暂无匹配的帖子' if query or kind else '还没有帖子' if mine else '暂时没有公开帖子' }}</h2>
+            <p class="text-gray-500 mt-2">先保存一份草稿，准备好后再发布给大家。</p>
+            <a href="/posts/new" class="inline-block mt-5 text-indigo-600 font-medium hover:underline">创建帖子 →</a>
+        </div>
+        {% endfor %}
+    </div>
+    {% if total_pages > 1 %}
+    <nav aria-label="帖子分页" class="flex items-center justify-center gap-6 mt-8">
+        {% if page > 1 %}<a href="?page={{ page - 1 }}&amp;kind={{ kind|urlencode }}&amp;q={{ query|urlencode }}" class="text-indigo-600 hover:underline">上一页</a>{% endif %}
+        <span class="text-sm text-gray-600">第 {{ page }} / {{ total_pages }} 页</span>
+        {% if page < total_pages %}<a href="?page={{ page + 1 }}&amp;kind={{ kind|urlencode }}&amp;q={{ query|urlencode }}" class="text-indigo-600 hover:underline">下一页</a>{% endif %}
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}

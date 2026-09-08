@@ -49,6 +49,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "home.no_opportunities": {"zh": "暂无机会", "en": "No opportunities yet"},
     "home.try_search": {"zh": "尝试搜索", "en": "Try a Search"},
     "home.collect_data": {"zh": "收集数据", "en": "Collect Data"},
+    "home.all_sources": {"zh": "所有来源", "en": "All Sources"},
     
     # Features
     "feature.ai_title": {"zh": "AI 智能匹配", "en": "AI Smart Matching"},
@@ -94,6 +95,17 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "auth.privacy": {"zh": "隐私政策", "en": "Privacy Policy"},
     "auth.register_btn": {"zh": "注册", "en": "Register"},
     "auth.error_email_password": {"zh": "邮箱或密码错误", "en": "Invalid email or password"},
+    "auth.forgot_title": {"zh": "找回密码", "en": "Forgot Password"},
+    "auth.forgot_desc": {"zh": "输入你的邮箱，我们将发送重置链接", "en": "Enter your email and we'll send you a reset link"},
+    "auth.send_reset": {"zh": "发送重置链接", "en": "Send Reset Link"},
+    "auth.back_to_login": {"zh": "返回登录", "en": "Back to Login"},
+    "auth.reset_email_sent": {"zh": "如果该邮箱已注册，重置链接已发送", "en": "If an account exists with this email, a reset link has been sent"},
+    "auth.reset_title": {"zh": "重置密码", "en": "Reset Password"},
+    "auth.new_password": {"zh": "新密码", "en": "New Password"},
+    "auth.confirm_new_password": {"zh": "确认新密码", "en": "Confirm New Password"},
+    "auth.reset_btn": {"zh": "重置密码", "en": "Reset Password"},
+    "auth.invalid_reset_link": {"zh": "重置链接无效或已过期", "en": "Invalid or expired reset link"},
+    "auth.password_reset_success": {"zh": "密码重置成功，请登录", "en": "Password reset successful. Please login."},
     
     # Onboarding
     "onboarding.title": {"zh": "告诉我们你的兴趣", "en": "Tell us your interests"},

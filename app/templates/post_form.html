@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑帖子' if post.id else '创建帖子' }} - {{ i18n.t('site.name') }}{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <a href="/posts/mine" class="text-sm text-indigo-600 hover:underline">← 我的帖子</a>
+    <h1 class="text-3xl font-bold text-gray-900 mt-4">{{ '编辑帖子' if post.id else '创建帖子' }}</h1>
+    <p class="text-gray-600 mt-2">先保存草稿，准备好后点击发布。招募帖也会进入项目搜索；经验与讨论留在社区。</p>
+    <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-900 mt-5">发布者身份尚未核验。请仅发布你有权代表的团队招募信息；不要公开他人的私人信息。</div>
+    <form id="post-form" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 sm:p-8 mt-6 space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <span id="post-status" class="text-sm font-medium text-gray-700"></span>
+            <a id="view-post" href="#" class="text-sm text-indigo-600 hover:underline" hidden>查看公开帖子 →</a>
+        </div>
+        <div>
+            <label for="post_kind" class="block text-sm font-medium text-gray-800 mb-2">帖子类型</label>
+            <select id="post_kind" name="post_kind" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white">
+                {% for value, label in [('recruitment', '招募 · 发布研究机会'), ('experience', '经验分享 · 记录申请与科研经历'), ('discussion', '讨论交流 · 提问与交流想法')] %}
+                <option value="{{ value }}" {% if (post.post_kind or 'recruitment') == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label for="title" class="block text-sm font-medium text-gray-800 mb-2">标题 <span class="text-red-600">*</span></label>
+            <input id="title" name="title" required maxlength="180" value="{{ post.title or '' }}" placeholder="例如：计算机视觉实验室招募暑期研究实习生" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500">
+        </div>
+        <div data-recruitment class="grid sm:grid-cols-2 gap-5">
+            <div>
+                <label for="university" class="block text-sm font-medium text-gray-800 mb-2">机构 / 学校 <span class="text-gray-500 font-normal">发布时必填</span></label>
+                <input id="university" name="university" maxlength="160" value="{{ post.university or '' }}" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+            </div>
+            <div>
+                <label for="professor_name" class="block text-sm font-medium text-gray-800 mb-2">导师 / 招募联系人</label>
+                <input id="professor_name" name="professor_name" maxlength="120" value="{{ post.professor_name or '' }}" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+            </div>
+        </div>
+        <div>
+            <label for="description" class="block text-sm font-medium text-gray-800 mb-2">正文 <span class="text-gray-500 font-normal">发布时至少 20 字</span></label>
+            <textarea id="description" name="description" rows="9" maxlength="20000" placeholder="写下招募说明、你的经历或想讨论的问题。" class="w-full border border-gray-300 rounded-lg px-3 py-2">{{ post.description or '' }}</textarea>
+        </div>
+        <div data-recruitment>
+            <label for="requirements" class="block text-sm font-medium text-gray-800 mb-2">申请要求</label>
+            <textarea id="requirements" name="requirements" rows="4" maxlength="8000" placeholder="例如学历、技能、所需材料。请避免填写申请人的个人信息。" class="w-full border border-gray-300 rounded-lg px-3 py-2">{{ post.requirements or '' }}</textarea>
+        </div>
+        <div data-recruitment class="grid sm:grid-cols-2 gap-5">
+            <div>
+                <label for="contact_email" class="block text-sm font-medium text-gray-800 mb-2">公开联系邮箱</label>
+                <input id="contact_email" name="contact_email" type="email" maxlength="254" value="{{ post.contact_email or '' }}" placeholder="research@example.edu" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+            </div>
+            <div>
+                <label for="deadline" class="block text-sm font-medium text-gray-800 mb-2">截止日期 <span class="text-gray-500 font-normal">可不填</span></label>
+                <input id="deadline" name="deadline" type="date" value="{{ post.deadline or '' }}" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+            </div>
+        </div>
+        <div data-recruitment>
+            <label for="direct_apply_link" class="block text-sm font-medium text-gray-800 mb-2">申请链接</label>
+            <input id="direct_apply_link" name="direct_apply_link" type="url" maxlength="2048" value="{{ post.direct_apply_link or '' }}" placeholder="https://example.edu/apply" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+            <p class="text-xs text-gray-500 mt-2">发布时至少提供联系邮箱或申请链接中的一项。联系邮箱会公开展示。</p>
+        </div>
+        <p id="post-feedback" role="status" aria-live="polite" class="text-sm whitespace-pre-line" hidden></p>
+        <div class="flex flex-wrap gap-3 border-t pt-5">
+            <button id="save-post" type="submit" data-action="save" class="px-5 py-2.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50">保存草稿</button>
+            <button id="publish-post" type="submit" data-action="publish" class="px-5 py-2.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">发布帖子</button>
+            <button id="close-post" type="button" class="px-5 py-2.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50" hidden>下架帖子</button>
+        </div>
+    </form>
+</div>
+<script>
+let postId = {{ (post.id or none)|tojson }};
+let postStatus = {{ (post.post_status or 'draft')|tojson }};
+const postCsrfToken = {{ csrf_token|tojson }};
+const postForm = document.getElementById('post-form');
+const feedback = document.getElementById('post-feedback');
+
+function renderPostStatus() {
+    document.getElementById('post-status').textContent = {draft: '草稿 · 仅自己可见', published: '已发布 · 所有人可见', closed: '已下架 · 仅自己可见'}[postStatus];
+    document.getElementById('save-post').textContent = postStatus === 'published' ? '保存并更新公开内容' : '保存草稿';
+    document.getElementById('publish-post').hidden = postStatus === 'published';
+    document.getElementById('publish-post').textContent = postStatus === 'closed' ? '重新发布' : '发布帖子';
+    document.getElementById('close-post').hidden = postStatus !== 'published';
+    const link = document.getElementById('view-post');
+    link.hidden = postStatus !== 'published';
+    if (postId) link.href = '/posts/' + encodeURIComponent(postId);
+}
+
+function renderPostKind() {
+    const recruitment = document.getElementById('post_kind').value === 'recruitment';
+    document.querySelectorAll('[data-recruitment]').forEach(element => {
+        element.hidden = !recruitment;
+        element.style.display = recruitment ? '' : 'none';
+        element.querySelectorAll('input, textarea').forEach(input => input.disabled = !recruitment);
+    });
+}
+
+async function postRequest(url, method, body) {
+    const response = await fetch(url, {method, headers: {'Content-Type': 'application/json', 'X-CSRF-Token': postCsrfToken}, body: JSON.stringify(body)});
+    const result = await response.json();
+    if (!response.ok) {
+        const detail = result.detail;
+        throw new Error(Array.isArray(detail) ? detail.map(item => item.msg).join('\n') : detail || '操作失败，请稍后重试');
+    }
+    postId = result.post.id;
+    postStatus = result.post.post_status;
+    history.replaceState(null, '', '/posts/' + encodeURIComponent(postId) + '/edit');
+    renderPostStatus();
+}
+
+async function performPostAction(action) {
+    const buttons = Array.from(postForm.querySelectorAll('button'));
+    buttons.forEach(button => button.disabled = true);
+    feedback.hidden = true;
+    try {
+        if (action !== 'close') {
+            await postRequest(postId ? '/api/posts/' + encodeURIComponent(postId) : '/api/posts', postId ? 'PUT' : 'POST', Object.fromEntries(new FormData(postForm)));
+        }
+        if (action === 'publish' || action === 'close') {
+            await postRequest('/api/posts/' + encodeURIComponent(postId) + '/status', 'POST', {status: action === 'publish' ? 'published' : 'closed'});
+        }
+        feedback.textContent = action === 'publish' ? '已发布，可在社区查看；招募帖同时进入项目搜索。' : action === 'close' ? '已下架，帖子已从公开列表与搜索中移除。' : postStatus === 'published' ? '已保存并更新公开内容。' : '草稿已保存，仅你可见。';
+        feedback.className = 'text-sm text-green-700';
+    } catch (error) {
+        feedback.textContent = error.message || '网络连接失败，请重试。';
+        feedback.className = 'text-sm text-red-700';
+    } finally {
+        feedback.hidden = false;
+        buttons.forEach(button => button.disabled = false);
+    }
+}
+
+postForm.addEventListener('submit', event => {
+    event.preventDefault();
+    performPostAction(event.submitter?.dataset.action || 'save');
+});
+document.getElementById('close-post').addEventListener('click', () => performPostAction('close'));
+document.getElementById('post_kind').addEventListener('change', renderPostKind);
+renderPostStatus();
+renderPostKind();
+</script>
+{% endblock %}

@@ -3,12 +3,18 @@ from sqlite_utils import Database
 import logging
 import hashlib
 import json
+import os
 from typing import Dict, List, Optional
+from datetime import datetime, timedelta
+from urllib.parse import urlparse
+
+from app.search_ranking import rank_search_results
+from app.search_utils import build_query_concepts, canonicalize_source_url, normalize_source_filter
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-DB_NAME = "summer.db"
+DB_NAME = os.getenv("SUMMER_DB_PATH", "summer.db")
 
 
 def get_db() -> Database:
@@ -19,6 +25,18 @@ def get_db() -> Database:
 def generate_opportunity_id(source_url: str) -> str:
     """Generates a unique ID for an opportunity based on source URL."""
     return hashlib.md5(source_url.encode()).hexdigest()[:16]
+
+
+def is_real_source_url(source_url: str) -> bool:
+    """Return True only for real web URLs that can be traced back to a source."""
+    if not source_url:
+        return False
+    parsed = urlparse(str(source_url).strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _real_source_sql() -> str:
+    return "((source_url LIKE 'http://%' OR source_url LIKE 'https://%') AND (coalesce(provider, '') != 'user_post' OR (post_status = 'published' AND coalesce(post_kind, 'recruitment') = 'recruitment')))"
 
 
 def init_db():
@@ -106,11 +124,19 @@ def init_db():
             "university": str,
             "department": str,
             "description": str,
+            "requirements": str,  # specific eligibility
             "embedding": str,  # JSON string of vector
             "hiring_signals": str,  # JSON array of signals
             "has_direct_apply": int,  # 0 or 1
             "direct_apply_link": str,
             "deadline": str,  # nullable
+            "published_at": str,  # source publication time when available
+            "provider": str,  # serpapi|gemini|mediacrawler|manual
+            "source_query": str,  # query that discovered the item
+            "owner_user_id": int,
+            "post_status": str,
+            "post_kind": str,
+            "contact_email": str,
             "quality_score": int,  # 0-100
             "created_at": str,
             "updated_at": str,
@@ -121,32 +147,36 @@ def init_db():
     else:
         # Migration: Add columns if not exists
         cols = db["opportunities"].columns_dict
+        for name, kind in (("owner_user_id", int), ("post_status", str), ("post_kind", str), ("contact_email", str)):
+            if name not in cols:
+                db["opportunities"].add_column(name, kind)
         if "quality_score" not in cols:
             db["opportunities"].add_column("quality_score", int, not_null_default=0)
             logger.info("Added 'quality_score' column to opportunities.")
+        if "requirements" not in cols:
+            db["opportunities"].add_column("requirements", str)
+            logger.info("Added 'requirements' column to opportunities.")
         if "hiring_signals" not in cols:
             db["opportunities"].add_column("hiring_signals", str)
             logger.info("Added 'hiring_signals' column to opportunities.")
         if "has_direct_apply" not in cols:
             db["opportunities"].add_column("has_direct_apply", int, not_null_default=0)
             logger.info("Added 'has_direct_apply' column to opportunities.")
-
-    # Seed with some initial data if empty
-    if db["programs"].count == 0:
-        db["programs"].insert_all([
-            {
-                "title": "Summer Geometry Initiative",
-                "institution": "MIT",
-                "location": "Remote / Cambridge, MA",
-                "description": "A six-week paid summer research program introducing undergraduate and graduate students to the field of geometry processing.",
-                "deadline": "2025-02-15",
-                "stipend": "Paid",
-                "url": "https://sgi.mit.edu",
-                "source": "manual",
-                "tags": "geometry, vision, graphics"
-            }
-        ])
-        logger.info("Seeded initial program data.")
+        if "direct_apply_link" not in cols:
+            db["opportunities"].add_column("direct_apply_link", str)
+            logger.info("Added 'direct_apply_link' column to opportunities.")
+        if "deadline" not in cols:
+            db["opportunities"].add_column("deadline", str)
+            logger.info("Added 'deadline' column to opportunities.")
+        if "published_at" not in cols:
+            db["opportunities"].add_column("published_at", str)
+            logger.info("Added 'published_at' column to opportunities.")
+        if "provider" not in cols:
+            db["opportunities"].add_column("provider", str)
+            logger.info("Added 'provider' column to opportunities.")
+        if "source_query" not in cols:
+            db["opportunities"].add_column("source_query", str)
+            logger.info("Added 'source_query' column to opportunities.")
 
 def upsert_opportunity(opportunity: Dict) -> bool:
     """
@@ -155,10 +185,12 @@ def upsert_opportunity(opportunity: Dict) -> bool:
     Returns True if inserted, False if updated.
     """
     db = get_db()
-    source_url = opportunity.get("source_url", "")
-    if not source_url:
-        logger.warning("Opportunity missing source_url, skipping.")
+    opportunity = dict(opportunity)
+    source_url = canonicalize_source_url(opportunity.get("source_url", ""))
+    if not is_real_source_url(source_url):
+        logger.warning("Opportunity missing a real source_url, skipping.")
         return False
+    opportunity["source_url"] = source_url
     
     opp_id = generate_opportunity_id(source_url)
     opportunity["id"] = opp_id
@@ -168,6 +200,15 @@ def upsert_opportunity(opportunity: Dict) -> bool:
     
     if existing:
         # Update
+        opportunity["created_at"] = existing[0].get("created_at") or opportunity.get("created_at")
+        # Search snippets often omit known deadlines and application details.
+        # Missing evidence must not erase an earlier full-source import.
+        for field in ("description", "professor_name", "university", "department", "requirements",
+                      "deadline", "published_at", "direct_apply_link", "embedding"):
+            if not opportunity.get(field) and existing[0].get(field):
+                opportunity[field] = existing[0][field]
+        if opportunity.get("direct_apply_link"):
+            opportunity["has_direct_apply"] = 1
         db["opportunities"].update(opp_id, opportunity)
         logger.info(f"Updated opportunity: {opportunity.get('title', opp_id)[:50]}")
         return False
@@ -190,7 +231,7 @@ def get_opportunities(
     """
     db = get_db()
     
-    where_clauses = []
+    where_clauses = [_real_source_sql()]
     params = []
     
     if source_type:
@@ -214,35 +255,98 @@ def get_opportunities(
     return list(rows)
 
 
-def search_opportunities_fts(query: str, limit: int = 50) -> List[Dict]:
+def get_recent_opportunities(limit: int = 200) -> List[Dict]:
     """
-    Search opportunities using LIKE queries (more reliable than FTS for this use case).
-    Searches across title, description, professor_name, and university.
+    Fetch the most recent opportunities from the database for semantic ranking.
     """
     db = get_db()
     try:
-        # Use LIKE search which is more reliable
-        search_pattern = f"%{query}%"
-        sql = """
-            SELECT * FROM opportunities 
-            WHERE title LIKE ? 
-               OR description LIKE ? 
-               OR professor_name LIKE ? 
-               OR university LIKE ?
-            ORDER BY quality_score DESC
-            LIMIT ?
-        """
-        rows = list(db.execute(sql, [search_pattern, search_pattern, search_pattern, search_pattern, limit]).fetchall())
-        
-        # Convert to list of dicts
-        if rows:
-            columns = [col[0] for col in db.execute("PRAGMA table_info(opportunities)").fetchall()]
-            column_names = [c[1] for c in db.execute("PRAGMA table_info(opportunities)").fetchall()]
-            return [dict(zip(column_names, row)) for row in rows]
+        cols = db["opportunities"].columns_dict
+        if "updated_at" in cols:
+            order_by = "updated_at desc"
+        elif "created_at" in cols:
+            order_by = "created_at desc"
+        else:
+            order_by = "quality_score desc"
+        rows = list(db["opportunities"].rows_where(
+            where=_real_source_sql(),
+            order_by=order_by,
+            limit=limit,
+        ))
+        return rows
+    except Exception as e:
+        logger.error(f"Error fetching recent opportunities: {e}")
         return []
+
+def search_opportunities_fts(
+    query: str,
+    limit: Optional[int] = 50,
+    source_type: Optional[str] = None,
+) -> List[Dict]:
+    """Recall bilingual candidates, then apply strict hybrid ranking in Python."""
+    source_type = normalize_source_filter(source_type)
+    db = get_db()
+    try:
+        concepts = build_query_concepts(query)
+        if not concepts:
+            return []
+
+        available_columns = db["opportunities"].columns_dict
+        searchable_fields = [field for field in [
+            "title",
+            "description",
+            "professor_name",
+            "university",
+            "department",
+            "requirements",
+        ] if field in available_columns]
+
+        if not searchable_fields:
+            return []
+        haystack = "lower(" + " || ' ' || ".join(
+            f"coalesce({field}, '')" for field in searchable_fields
+        ) + ")"
+        where_parts = []
+        where_params = []
+        for concept in concepts:
+            aliases = []
+            for term in concept:
+                escaped = term.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                # Broad recall tolerates whitespace; ranking checks exact evidence.
+                aliases.append(f"{haystack} LIKE ? ESCAPE '\\'")
+                where_params.append("%" + "%".join(escaped.split()) + "%")
+            where_parts.append("(" + " OR ".join(aliases) + ")")
+
+        filters = [_real_source_sql()]
+        filter_params = []
+        if source_type:
+            filters.append("source_type = ?")
+            filter_params.append(source_type)
+
+        where_sql = f"({' AND '.join(where_parts)}) AND {' AND '.join(filters)}"
+        # ponytail: LIKE scans the local index; add a bilingual FTS tokenizer if
+        # measured latency warrants it. Never discard matches by quality first.
+        sql = f"""
+            SELECT *
+            FROM opportunities
+            WHERE {where_sql}
+            ORDER BY quality_score DESC, updated_at DESC, id
+        """
+        params = where_params + filter_params
+        cursor = db.execute(sql, params)
+        column_names = [description[0] for description in cursor.description]
+        results = (dict(zip(column_names, row)) for row in cursor)
+        return rank_search_results(
+            query,
+            results,
+            source_filter=source_type,
+            limit=limit,
+        )
     except Exception as e:
         logger.error(f"Search error: {e}")
         return []
+    finally:
+        db.conn.close()
 
 
 def get_opportunity_by_id(opp_id: str) -> Optional[Dict]:
@@ -250,14 +354,30 @@ def get_opportunity_by_id(opp_id: str) -> Optional[Dict]:
     Retrieves a single opportunity by ID.
     """
     db = get_db()
-    rows = list(db["opportunities"].rows_where("id = ?", [opp_id]))
+    rows = list(db["opportunities"].rows_where(
+        f"id = ? AND {_real_source_sql()}",
+        [opp_id],
+    ))
     return rows[0] if rows else None
 
 
-def get_opportunity_count() -> int:
-    """Returns total number of opportunities."""
+def get_opportunity_count(source_type: Optional[str] = None, min_quality: int = 0) -> int:
+    """Returns total number of opportunities with optional filters."""
     db = get_db()
-    return db["opportunities"].count
+
+    where_clauses = [_real_source_sql()]
+    params = []
+
+    if source_type:
+        where_clauses.append("source_type = ?")
+        params.append(source_type)
+
+    if min_quality > 0:
+        where_clauses.append("quality_score >= ?")
+        params.append(min_quality)
+
+    where_sql = " AND ".join(where_clauses)
+    return db["opportunities"].count_where(where_sql, params)
 
 
 # ============== User Management ==============
@@ -465,6 +585,87 @@ def get_user_saved(user_id: int) -> List[Dict]:
     return rows
 
 
+def create_password_reset_token(user_id: int) -> str:
+    """Create a password reset token for a user."""
+    import secrets
+
+    db = get_db()
+    token = secrets.token_urlsafe(32)
+    expires_at = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+
+    # Create reset_tokens table if not exists
+    if "reset_tokens" not in db.table_names():
+        db["reset_tokens"].create({
+            "id": int,
+            "user_id": int,
+            "token": str,
+            "expires_at": str,
+            "used": int,
+        }, pk="id")
+        db["reset_tokens"].create_index(["token"], unique=True)
+
+    # Invalidate any existing tokens for this user
+    db.execute("UPDATE reset_tokens SET used = 1 WHERE user_id = ?", [user_id])
+
+    # Create new token
+    db["reset_tokens"].insert({
+        "user_id": user_id,
+        "token": token,
+        "expires_at": expires_at,
+        "used": 0,
+    })
+
+    return token
+
+
+def verify_reset_token(token: str) -> Optional[int]:
+    """Verify a reset token and return user_id if valid."""
+    db = get_db()
+    if "reset_tokens" not in db.table_names():
+        return None
+
+    rows = list(db["reset_tokens"].rows_where("token = ?", [token]))
+    if not rows:
+        return None
+
+    row = rows[0]
+
+    # Check if used
+    if row["used"]:
+        return None
+
+    # Check if expired
+    expires_at = datetime.fromisoformat(row["expires_at"])
+    if datetime.utcnow() > expires_at:
+        return None
+
+    return row["user_id"]
+
+
+def use_reset_token(token: str) -> bool:
+    """Mark a reset token as used."""
+    db = get_db()
+    if "reset_tokens" not in db.table_names():
+        return False
+
+    try:
+        with db.conn:
+            cursor = db.execute("UPDATE reset_tokens SET used = 1 WHERE token = ? AND used = 0", [token])
+        return cursor.rowcount == 1
+    finally:
+        db.conn.close()
+
+
+def update_user_password(user_id: int, password_hash: str) -> bool:
+    """Update a user's password."""
+    db = get_db()
+    try:
+        db["users"].update(user_id, {"password_hash": password_hash})
+        return True
+    except:
+        return False
+
+
 def is_opportunity_saved(user_id: int, opportunity_id: str) -> bool:
     """Check if an opportunity is saved by user."""
     db = get_db()
@@ -474,8 +675,6 @@ def is_opportunity_saved(user_id: int, opportunity_id: str) -> bool:
     ))
     return len(rows) > 0
 
-
-from datetime import datetime
 
 if __name__ == "__main__":
     init_db()

@@ -23,8 +23,9 @@ from app.matching import matcher
 from app.agents import ResearchAgent
 from app.database import (
     init_db, get_db, upsert_opportunity, 
-    generate_opportunity_id, get_opportunity_count
+    generate_opportunity_id, get_opportunity_count, is_real_source_url
 )
+from app.search_utils import canonicalize_source_url, detect_source_type, text_contains_term
 
 
 class OpportunityProcessor:
@@ -35,7 +36,13 @@ class OpportunityProcessor:
     
     def __init__(self):
         self.agent = ResearchAgent()
-        self.scraper = AcademicScraper()
+
+    @staticmethod
+    def content_text(item: Dict) -> str:
+        """Only source content is evidence; discovery queries and URLs are not."""
+        return " ".join(str(item.get(field) or "") for field in (
+            "title", "name", "description", "snippet", "interests", "requirements",
+        )).lower()
     
     def calculate_quality_score(self, item: Dict) -> int:
         """
@@ -44,7 +51,7 @@ class OpportunityProcessor:
         """
         score = 50  # Base score
         
-        text = json.dumps(item).lower()
+        text = self.content_text(item)
         
         # Hiring signal boosts
         hiring_keywords = {
@@ -57,16 +64,21 @@ class OpportunityProcessor:
             "summer intern": 10,
             "reu": 10,
             "funded": 10,
+            "暑研": 12,
+            "科研实习": 12,
+            "博士招生": 15,
+            "课题组招生": 15,
+            "招募": 12,
         }
         
         for keyword, boost in hiring_keywords.items():
-            if keyword in text:
+            if text_contains_term(text, keyword):
                 score += boost
                 break  # Only apply one hiring boost
         
         # Funding signal boosts
         funding_keywords = ["nsf", "grant", "funding", "fellowship", "stipend", "paid"]
-        if any(k in text for k in funding_keywords):
+        if any(text_contains_term(text, k) for k in funding_keywords):
             score += 10
         
         # New lab/assistant professor boost
@@ -74,15 +86,22 @@ class OpportunityProcessor:
             score += 8
         
         # Source reliability
-        source = item.get("source", "").lower()
+        source = f"{item.get('source', '')} {item.get('source_type', '')}".lower()
         source_scores = {
             "nsf reu": 15,
-            "google scholar": 10,
+            "university": 12,
+            "professor_site": 12,
+            "academicjobs": 10,
+            "euraxess": 10,
+            "findaphd": 9,
+            "mediacrawler": 6,
             "linkedin": 5,
-            "university": 8,
             "wechat": 3,
             "xiaohongshu": 3,
+            "zhihu": 2,
+            "bilibili": 2,
             "twitter": 2,
+            "google scholar": -5,
         }
         for src_key, src_boost in source_scores.items():
             if src_key in source:
@@ -105,21 +124,21 @@ class OpportunityProcessor:
         Extracts human-readable hiring signals from the item.
         """
         signals = []
-        text = json.dumps(item).lower()
+        text = self.content_text(item)
         
-        if "nsf" in text or "grant" in text or "funding" in text:
+        if any(text_contains_term(text, k) for k in ("nsf", "grant", "funding")):
             signals.append("Recent Funding Detected (High Hiring Probability)")
         
         if "assistant professor" in text or "new lab" in text:
             signals.append("New Lab / Assistant Professor (Likely seeking students)")
         
-        if any(k in text for k in ["hiring", "looking for", "openings", "position"]):
+        if any(text_contains_term(text, k) for k in ["hiring", "looking for", "openings", "position", "招生", "招募"]):
             signals.append("Explicitly Hiring")
         
-        if any(k in text for k in ["reu", "summer research", "summer intern"]):
+        if any(text_contains_term(text, k) for k in ["reu", "summer research", "summer intern", "暑研", "科研实习"]):
             signals.append("Summer Research Program")
         
-        if any(k in text for k in ["stipend", "paid", "fellowship"]):
+        if any(text_contains_term(text, k) for k in ["stipend", "paid", "fellowship"]):
             signals.append("Funded Position")
         
         return signals
@@ -140,20 +159,19 @@ class OpportunityProcessor:
         Normalizes a scraped item into the standard opportunity format.
         """
         # Determine source URL
-        source_url = (
+        source_url = canonicalize_source_url(
             item.get("url") or 
             item.get("recent_paper") or 
             item.get("link") or 
-            item.get("website") or
-            f"unknown://{hash(json.dumps(item))}"
+            item.get("website")
         )
+        if not is_real_source_url(source_url):
+            raise ValueError("Skipping item without a real source URL.")
         
         # Extract title
-        title = (
-            item.get("title") or 
-            item.get("name") or 
-            f"{item.get('professor_name', 'Research')} at {item.get('university', 'University')}"
-        )
+        title = item.get("title") or item.get("name")
+        if not title:
+            raise ValueError("Skipping item without a source-provided title.")
         
         # Extract description
         description = (
@@ -163,37 +181,46 @@ class OpportunityProcessor:
             ""
         )
         
-        # Generate embedding
-        text_for_embedding = f"{title} {description}"
-        try:
-            embedding = matcher.encode_text(text_for_embedding)
-            embedding_json = json.dumps(embedding) if embedding else None
-        except Exception as e:
-            logger.warning(f"Failed to generate embedding: {e}")
-            embedding_json = None
+        # Stored embeddings were not consumed by the search path and made every
+        # import pay model-startup cost. Keep them opt-in for offline experiments.
+        embedding_json = None
+        if os.getenv("STORE_EMBEDDINGS", "").lower() in {"1", "true", "yes"}:
+            text_for_embedding = f"{title} {description}"
+            try:
+                embedding = matcher.encode_text(text_for_embedding)
+                embedding_json = json.dumps(embedding) if embedding else None
+            except Exception as e:
+                logger.warning(f"Failed to generate embedding: {e}")
         
         # Detect direct apply
         has_apply, apply_link = self.detect_direct_apply(item)
         
         # Calculate quality and signals
-        quality_score = self.calculate_quality_score(item)
+        scored_item = {**item, "source_type": source_type}
+        quality_score = self.calculate_quality_score(scored_item)
         hiring_signals = self.extract_hiring_signals(item)
         
         now = datetime.datetime.now().isoformat()
         
         return {
-            "title": title[:500],  # Truncate long titles
+            "title": str(title)[:500],  # Truncate long titles
             "source_type": source_type,
             "source_url": source_url,
-            "professor_name": item.get("professor_name") or item.get("name") or item.get("author"),
+            "professor_name": item.get("professor_name") or item.get("professor") or item.get("author") or "",
             "university": item.get("university") or item.get("institution") or "",
             "department": item.get("department") or "",
-            "description": description[:2000],  # Truncate long descriptions
+            "description": str(description)[:2000],  # Truncate long descriptions
+            "requirements": str(item.get("requirements") or "")[:1000],
             "embedding": embedding_json,
             "hiring_signals": json.dumps(hiring_signals),
             "has_direct_apply": 1 if has_apply else 0,
             "direct_apply_link": apply_link or "",
-            "deadline": item.get("deadline"),
+            "deadline": str(item.get("deadline") or "")[:200],
+            "published_at": str(
+                item.get("published_at") or item.get("created_time") or item.get("time") or ""
+            )[:100],
+            "provider": str(item.get("provider") or item.get("search_provider") or "")[:50],
+            "source_query": str(item.get("source_query") or "")[:500],
             "quality_score": quality_score,
             "created_at": now,
             "updated_at": now,
@@ -240,11 +267,22 @@ class DataCollectionScheduler:
     """
     Manages scheduled data collection jobs.
     """
-    
-    # Default search queries for broad coverage
+
+    # WeChat article keywords collected through Sogou (no login or API key).
+    WECHAT_DEFAULT_QUERIES = [
+        "暑研",
+        "暑期科研",
+        "科研实习",
+        "暑研申请",
+        "课题组招生",
+        "博士招生",
+        "科研助理",
+    ]
+
+    # Default search queries for broad coverage; dates are set when a job starts.
     DEFAULT_QUERIES = [
-        "summer research 2025",
-        "summer research 2026",
+        "summer research {year}",
+        "summer research {next_year}",
         "PhD student position",
         "research intern",
         "暑研",
@@ -253,10 +291,54 @@ class DataCollectionScheduler:
         "computer vision",
         "robotics",
         "artificial intelligence research",
+        "reinforcement learning",
+        "large language models",
+        "generative ai",
+        "computational biology",
+        "human computer interaction",
+        "software engineering research",
+        "systems research",
+        "data science internship",
+        "machine learning engineer intern",
+        "deep learning research",
+        "autonomous driving research",
+        "medical image analysis",
+        "natural language processing",
+        "computer graphics research",
+        "security and privacy research",
+        "blockchain research",
+        "quantum computing research",
+        "bioinformatics research",
+        "neuroscience research",
+        "cognitive science research",
+        "psychology research assistant",
+        "economics research assistant",
+        "finance research assistant",
+        "quantitative research intern",
+        "algorithmic trading intern",
+        "policy research intern",
+        "sociology research",
+        "political science research",
+        "history research assistant",
+        "digital humanities research",
+        "climate change research",
+        "environmental science research",
+        "sustainable energy research",
+        "materials science research",
+        "nanotechnology research",
+        "chemical engineering research",
+        "biomedical engineering research",
+        "electrical engineering research",
+        "mechanical engineering research",
+        "civil engineering research",
+        "aerospace engineering research",
     ]
     
     def __init__(self, queries: List[str] = None):
-        self.queries = queries or self.DEFAULT_QUERIES
+        year = datetime.datetime.now().year
+        self.queries = queries if queries is not None else [
+            query.format(year=year, next_year=year + 1) for query in self.DEFAULT_QUERIES
+        ]
         self.processor = OpportunityProcessor()
         self.scraper = AcademicScraper()
     
@@ -284,26 +366,10 @@ class DataCollectionScheduler:
                 # Process results
                 for item in results:
                     source = item.get("source", "unknown").lower()
-                    
-                    # Determine source type
-                    if "scholar" in source:
-                        source_type = "scholar"
-                    elif "linkedin" in source:
-                        source_type = "linkedin"
-                    elif "xiaohongshu" in source or "rednote" in source:
-                        source_type = "xiaohongshu"
-                    elif "wechat" in source or "weixin" in source:
-                        source_type = "wechat"
-                    elif "twitter" in source or "x.com" in source:
-                        source_type = "twitter"
-                    elif "instagram" in source:
-                        source_type = "instagram"
-                    elif "discord" in source:
-                        source_type = "discord"
-                    elif "nsf" in source:
-                        source_type = "nsf"
-                    else:
-                        source_type = "other"
+                    source_type = item.get("source_type") or detect_source_type(
+                        source,
+                        item.get("url") or item.get("recent_paper") or item.get("link") or "",
+                    )
                     
                     try:
                         normalized = self.processor.normalize_item(item, source_type)
@@ -342,6 +408,40 @@ class DataCollectionScheduler:
         
         return stats
 
+    def run_wechat_collection(self, keywords: List[str] = None) -> Dict:
+        """
+        Collects WeChat official-account articles through Sogou's WeChat index.
+
+        Needs no login and no API key, but Sogou rate-limits aggressively:
+        requests are spaced out and the job stops early when Sogou starts
+        returning nothing (a sign the antispider wall kicked in).
+        """
+        queries = keywords or self.WECHAT_DEFAULT_QUERIES
+        sogou = self.scraper.sogou_scraper
+        stats = {"source": "wechat", "queries_processed": 0, "new": 0, "rate_limited": False}
+
+        if not sogou.enabled():
+            logger.info("Sogou WeChat search disabled (ENABLE_SOGOU_WECHAT=0).")
+            return stats
+
+        for query in queries:
+            try:
+                results = sogou.search_wechat(query)
+            except Exception as e:
+                logger.error(f"WeChat collection error for '{query}': {e}")
+                results = []
+            if not results:
+                # An empty page after warm-up usually means Sogou is
+                # rate-limiting; continuing just hammers the wall.
+                logger.warning(f"No WeChat results for '{query}'; stopping early.")
+                stats["rate_limited"] = True
+                break
+            stats["new"] += self.processor.process_social_results(results, "wechat")
+            stats["queries_processed"] += 1
+            time.sleep(3)
+
+        return stats
+
 
 def run_full_collection():
     """
@@ -359,6 +459,9 @@ def run_full_collection():
     # Also run NSF collection
     nsf_stats = scheduler.run_nsf_collection()
     stats["nsf"] = nsf_stats
+
+    # WeChat articles need no API key, so this also works key-free
+    stats["wechat"] = scheduler.run_wechat_collection()
     
     return stats
 
