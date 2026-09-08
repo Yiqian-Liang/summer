@@ -24,7 +24,7 @@ OPPORTUNITY_TERMS = [
     "open position", "open positions", "opening", "openings", "join my lab",
     "looking for students", "prospective students", "apply", "application deadline",
     "accepting students", "seeking students", "applications open", "applications are open",
-    "funded position", "stipend", "fellowship", "暑研", "科研实习", "博士招生",
+    "funded position", "stipend", "fellowship", "暑研", "暑期科研", "暑期研究", "科研实习", "研究实习", "博士招生",
     "硕士招生", "课题组招生", "导师招生", "招生", "招募", "招聘", "博士职位", "博士岗位", "申请截止", "全奖",
 ]
 

@@ -20,6 +20,7 @@
         <p class="mt-5 p-3 rounded-lg bg-amber-50 text-sm text-amber-900">本帖由用户自行发布，身份与机构归属尚未核验。请通过机构官网确认招募信息。</p>
         {% endif %}
         <div class="text-gray-800 leading-relaxed whitespace-pre-wrap break-words mt-7">{{ post.description }}</div>
+        {% if post.resume_match is defined %}{% with resume_match=post.resume_match %}{% include 'resume_evidence.html' %}{% endwith %}{% endif %}
         {% if post.post_kind == 'recruitment' %}
         {% if post.requirements %}
         <h2 class="text-lg font-semibold text-gray-900 mt-8">申请要求</h2>

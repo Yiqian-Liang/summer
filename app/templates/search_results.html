@@ -8,6 +8,8 @@
             <h2 class="text-2xl font-bold text-gray-900">
                 {% if query %}
                 {{ i18n.t('search.results_for', query=query) }}
+                {% elif sort == 'resume' %}
+                {{ '我的简历匹配' if i18n.is_zh() else 'My resume matches' }}
                 {% else %}
                 {{ i18n.t('home.latest') }}
                 {% endif %}
@@ -20,6 +22,7 @@
         
         <!-- Search Form -->
         <form action="/search" method="get" class="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+            <select name="sort" aria-label="{{ '排序方式' if i18n.is_zh() else 'Sort by' }}" class="rounded-md border p-2 text-sm"><option value="relevance" {% if sort != 'resume' %}selected{% endif %}>{{ '搜索相关性' if i18n.is_zh() else 'Search relevance' }}</option><option value="resume" {% if sort == 'resume' %}selected{% endif %}>{{ '我的简历优先' if i18n.is_zh() else 'My resume first' }}</option></select>
             <select name="source" aria-label="{{ '信息来源' if i18n.is_zh() else 'Source' }}" class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-3 py-2 border text-sm">
                 <option value="" {% if not source %}selected{% endif %}>{{ i18n.t('home.all_sources') }}</option>
                 <option value="community" {% if source == 'community' %}selected{% endif %}>{{ '站内招募' if i18n.is_zh() else 'Community posts' }}</option>
@@ -66,6 +69,8 @@
     </div>
 </div>
 
+{% if sort == 'resume' %}<p class="mb-4 text-sm text-indigo-800">{{ '按已确认简历的共同方向与技能数量排序。上传内容保持私有，不会作为在线搜索词。' if i18n.is_zh() else 'Ranked by shared keywords in your confirmed resume. Your resume is private and never used as a web search query.' }} <a href="/resume" class="underline">{{ '修改简历' if i18n.is_zh() else 'Edit resume' }}</a></p>{% endif %}
+
 {% if query %}
 <div class="mb-6 bg-white border border-gray-200 rounded-lg px-4 py-3">
     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
@@ -101,13 +106,13 @@
             {% endif %}
             {% if source_hit_counts %}
             <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <a href="/search?q={{ query|urlencode }}"
+                <a href="/search?q={{ query|urlencode }}{% if sort == 'resume' %}&sort=resume{% endif %}"
                    class="inline-flex items-center px-2 py-0.5 rounded border {% if not source %}border-indigo-200 bg-indigo-50 text-indigo-700{% else %}border-gray-200 bg-white text-gray-600{% endif %}">
                     {{ '全部' if i18n.is_zh() else 'All' }} {{ source_hit_total }}
                 </a>
                 {% for item in source_hit_counts %}
                 {% if item.count > 0 %}
-                <a href="/search?q={{ query|urlencode }}&source={{ item.source|urlencode }}"
+                <a href="/search?q={{ query|urlencode }}&source={{ item.source|urlencode }}{% if sort == 'resume' %}&sort=resume{% endif %}"
                    class="inline-flex items-center px-2 py-0.5 rounded border {% if source == item.source %}border-indigo-200 bg-indigo-50 text-indigo-700{% else %}border-gray-200 bg-white text-gray-600 hover:border-indigo-200 hover:text-indigo-700{% endif %}">
                     {{ item.label }} {{ item.count }}
                 </a>
@@ -118,7 +123,7 @@
         </div>
         <div class="flex flex-wrap gap-2">
             {% if live_search_enabled %}
-            <a href="/search?q={{ query|urlencode }}{% if source %}&source={{ source|urlencode }}{% endif %}&refresh=1"
+            <a href="/search?q={{ query|urlencode }}{% if source %}&source={{ source|urlencode }}{% endif %}{% if sort == 'resume' %}&sort=resume{% endif %}&refresh=1"
                class="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition">
                 <i class="fas fa-sync-alt mr-1.5"></i>{{ '刷新在线结果' if i18n.is_zh() else 'Refresh live results' }}
             </a>
@@ -215,14 +220,14 @@
                         <i class="fas fa-star mr-1"></i>{{ '优质' if i18n.is_zh() else 'Top' }}
                     </span>
                     {% endif %}
-                    {% if result.match_score and result.match_score > 80 %}
+                    {% if result.resume_match is not defined and result.match_score and result.match_score > 80 %}
                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
                         <i class="fas fa-bullseye mr-1"></i>{{ '高匹配' if i18n.is_zh() else 'Match' }}
                     </span>
                     {% endif %}
                 </div>
                 <div class="flex items-center gap-2">
-                    {% if result.match_score is not none %}
+                    {% if result.resume_match is not defined and result.match_score is not none %}
                     <span class="text-sm font-semibold text-gray-700 tabular-nums" title="{{ '搜索相关性评分，不代表录取概率' if i18n.is_zh() else 'Search relevance score, not admission probability' }}">
                         {{ result.match_score }}/100
                     </span>
@@ -274,6 +279,7 @@
             {% endif %}
             
             <!-- Tags -->
+            {% if result.resume_match is defined %}{% with resume_match=result.resume_match %}{% include 'resume_evidence.html' %}{% endwith %}{% endif %}
             {% if result.tags %}
             <div class="flex flex-wrap gap-1 mb-3">
                 {% for tag in result.tags %}
@@ -377,7 +383,7 @@
 <div class="mt-8 flex justify-center">
     <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
         {% if has_prev %}
-        <a href="/search?q={{ query|urlencode }}{% if source %}&source={{ source }}{% endif %}&page={{ current_page - 1 }}"
+        <a href="/search?q={{ query|urlencode }}{% if source %}&source={{ source }}{% endif %}{% if sort == 'resume' %}&sort=resume{% endif %}&page={{ current_page - 1 }}"
            class="relative inline-flex items-center px-3 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
             <i class="fas fa-chevron-left"></i>
         </a>
@@ -388,7 +394,7 @@
         </span>
         
         {% if has_next %}
-        <a href="/search?q={{ query|urlencode }}{% if source %}&source={{ source }}{% endif %}&page={{ current_page + 1 }}"
+        <a href="/search?q={{ query|urlencode }}{% if source %}&source={{ source }}{% endif %}{% if sort == 'resume' %}&sort=resume{% endif %}&page={{ current_page + 1 }}"
            class="relative inline-flex items-center px-3 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
             <i class="fas fa-chevron-right"></i>
         </a>

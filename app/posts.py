@@ -286,6 +286,11 @@ def post_detail_page(request: Request, post_id: str, page: int = Query(1, ge=1, 
         """, [post_id, (page - 1) * 50]))
     finally:
         db.conn.close()
+    from app.resumes import get_resume, match_resume
+    user = get_current_user(request.cookies.get("session_token"))
+    resume = get_resume(user["id"], active_only=True) if user else None
+    if resume and post.get("post_kind") == "recruitment":
+        post["resume_match"] = match_resume(post, resume)
     return templates.TemplateResponse("post_detail.html", _context(
         request, post=post, comments=comments, comment_count=comment_count,
         page=page, total_pages=(comment_count + 49) // 50,

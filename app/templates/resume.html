@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% set zh = i18n.is_zh() %}
+{% block title %}{{ '简历匹配' if zh else 'Resume matching' }} · {{ i18n.t('site.name') }}{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-5">
+    <div class="flex flex-wrap justify-between gap-3 items-start">
+        <div><h1 class="text-2xl font-bold">{{ '用你的研究经历找机会' if zh else 'Find opportunities from your research background' }}</h1><p class="text-gray-600 mt-2">{{ '上传简历，核对匹配词，再看哪些机会提到了相同方向与技能。' if zh else 'Upload a resume, review its keywords, then find opportunities mentioning the same topics and skills.' }}</p></div>
+        <a href="/search?sort=resume" class="rounded-md bg-indigo-600 text-white px-4 py-2">{{ '查看匹配机会' if zh else 'View matches' }}</a>
+    </div>
+    <p class="bg-indigo-50 text-indigo-900 p-4 rounded-lg text-sm">{{ '本地解析，无 AI 调用费。原文件不留存；只在点击确认后保存你核对过的文字与匹配词，仅本人可见。不会自动加入邮件或发送给外部 AI。' if zh else 'Local parsing, no AI fees. Original files are not retained. Only reviewed text and keywords are saved after confirmation, visible only to you. Nothing is automatically added to emails or sent to external AI.' }}</p>
+    <p id="resumeStatus" role="status" aria-live="polite" class="text-sm whitespace-pre-wrap"></p>
+    <section class="bg-white border rounded-xl p-5">
+        <label for="resumeFile" class="block font-semibold mb-2">{{ '上传简历或更换文件' if zh else 'Upload or replace a resume' }}</label>
+        <input id="resumeFile" type="file" accept=".pdf,.docx,.txt" aria-describedby="fileHint" class="block w-full text-sm">
+        <p id="fileHint" class="text-sm text-gray-500 mt-2">{{ '支持 PDF、DOCX、UTF-8 TXT，最大 2 MiB，PDF 最多 20 页。扫描件请改用可选中文字的文件，或直接在下方粘贴正文。更换文件不会立即覆盖已保存信息。' if zh else 'PDF, DOCX or UTF-8 TXT; up to 2 MiB and 20 PDF pages. For scanned files, use a text-based document or paste below. Replacing a file does not overwrite saved information until confirmed.' }}</p>
+    </section>
+    <form id="resumeForm" class="bg-white border rounded-xl p-5 space-y-4">
+        <p id="resumeFilename" class="text-sm text-gray-500 break-all"></p>
+        <label class="block font-semibold" for="resumeText">{{ '核对研究背景与经历' if zh else 'Review your background and experience' }}</label>
+        <textarea id="resumeText" rows="12" minlength="20" maxlength="30000" required class="w-full border rounded-md p-3" placeholder="{{ '可直接粘贴研究经历、项目和技能，不需要填写联系方式。' if zh else 'Paste research experience, projects and skills. Contact details are not needed.' }}"></textarea>
+        <label class="block font-semibold" for="resumeKeywords">{{ '用于匹配的方向与技能' if zh else 'Topics and skills for matching' }}</label>
+        <textarea id="resumeKeywords" rows="3" required class="w-full border rounded-md p-3" aria-describedby="keywordHint" placeholder="Python, Robotics, PyTorch"></textarea>
+        <p id="keywordHint" class="text-sm text-gray-500">{{ '用逗号或换行分隔，最多 20 项。请删除误识别，补充遗漏；每一项都需要正文依据。只比较研究方向和技能，不依据姓名、年龄或学校名气评分。' if zh else 'Comma or newline separated, up to 20 items. Remove incorrect suggestions and add missing ones. Each needs evidence in the text. Matching uses topics and skills, not names, age or school prestige.' }}</p>
+        <label class="flex items-center gap-2"><input id="resumeEnabled" type="checkbox" checked>{{ '启用简历匹配' if zh else 'Enable resume matching' }}</label>
+        <div class="flex flex-wrap gap-3"><button id="saveResume" type="submit" class="rounded-md bg-indigo-600 text-white px-4 py-2 disabled:opacity-50">{{ '确认并保存' if zh else 'Confirm and save' }}</button><button id="reloadResume" type="button" class="rounded-md border px-4 py-2">{{ '重新载入已保存内容' if zh else 'Reload saved content' }}</button><button id="deleteResume" type="button" class="text-red-700 px-4 py-2 disabled:opacity-50">{{ '删除已保存简历信息' if zh else 'Delete saved resume data' }}</button></div>
+    </form>
+    <p class="text-sm text-gray-500">{{ '匹配依据表示文本有共同内容，不代表录取概率，也不验证学位、资金、签证或时间资格。请继续核对项目原文。关闭匹配后需保存才生效。' if zh else 'Shared text evidence is not an admission probability or an eligibility check for degree, funding, visa or availability. Check the original posting. Save after switching matching off.' }}</p>
+</div>
+<script id="resumeBootstrap" type="application/json">{{ {'csrf': csrf_token, 'zh': zh}|tojson }}</script>
+<script src="/static/resume.js" defer></script>
+{% endblock %}

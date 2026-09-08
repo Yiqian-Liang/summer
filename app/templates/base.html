@@ -22,6 +22,7 @@
                             <a href="/search" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">{{ i18n.t('nav.search') }}</a>
                             <a href="/posts" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">{{ '社区' if i18n.is_zh() else 'Community' }}</a>
                             <a href="/mail" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">{{ '邮件' if i18n.is_zh() else 'Mail' }}</a>
+                            <a href="/resume" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">{{ '简历匹配' if i18n.is_zh() else 'Resume match' }}</a>
                             {% if user %}
                             <a href="/saved" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">
                                 <i class="fas fa-bookmark mr-1"></i>{{ i18n.t('nav.saved') }}
@@ -81,6 +82,7 @@
             <a href="/posts">{{ '社区' if i18n.is_zh() else 'Community' }}</a>
             <a href="/posts/new">{{ '发帖' if i18n.is_zh() else 'Post' }}</a>
             <a href="/mail">{{ '邮件' if i18n.is_zh() else 'Mail' }}</a>
+            <a href="/resume">{{ '简历匹配' if i18n.is_zh() else 'Resume match' }}</a>
         </div>
     </nav>
 

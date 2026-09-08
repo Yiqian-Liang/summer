@@ -103,6 +103,7 @@
             {% endif %}
 
             <!-- AI Analysis -->
+            {% if opportunity.resume_match is defined %}{% with resume_match=opportunity.resume_match %}{% include 'resume_evidence.html' %}{% endwith %}{% endif %}
             <div class="mb-6">
                 <h3 class="text-lg font-semibold text-gray-900 mb-3">
                     <i class="fas fa-brain text-purple-500 mr-2"></i> {{ 'AI 智能分析' if i18n.is_zh() else 'AI Analysis' }}

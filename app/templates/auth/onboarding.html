@@ -13,6 +13,7 @@
     </div>
 
     <form action="/onboarding" method="POST" class="space-y-8">
+        <a href="/resume" class="block rounded-lg bg-indigo-50 border border-indigo-100 p-4 text-indigo-800">{{ '已有简历？上传并核对研究经历，查看有共同方向与技能的机会 →' if i18n.is_zh() else 'Have a resume? Upload and review your background to find shared topics and skills →' }}</a>
         <!-- Section 1: Education Level -->
         <div class="bg-white rounded-xl shadow-md p-6">
             <h2 class="text-xl font-semibold text-gray-800 mb-4">

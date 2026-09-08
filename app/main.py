@@ -61,17 +61,19 @@ from app.mail_routes import router as mail_router
 from app.mail_service import init_mail_tables
 from app.mail_oauth import router as mail_oauth_router
 from app.posts import router as posts_router, init_post_tables
+from app.resumes import router as resume_router, init_resume_table, get_resume, rank_by_resume, match_resume
 
 app = FastAPI(title="Summer Research Platform")
 app.include_router(mail_router)
 app.include_router(mail_oauth_router)
 app.include_router(posts_router)
+app.include_router(resume_router)
 
 
 @app.middleware("http")
 async def private_workspace_headers(request: Request, call_next):
     response = await call_next(request)
-    if request.url.path == "/mail" or request.url.path.startswith("/api/mail") or request.url.path in {"/api/generate-rag-draft", "/posts/mine", "/posts/new"} or request.url.path.endswith("/edit"):
+    if request.cookies.get("session_token") or request.url.path in {"/mail", "/resume", "/api/generate-rag-draft", "/posts/mine", "/posts/new"} or request.url.path.startswith(("/api/mail", "/api/resume")) or request.url.path.endswith("/edit"):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -154,9 +156,10 @@ def sync_live_opportunities(query: str, source: Optional[str], refresh: bool) ->
 async def run_opportunity_search(
     query: str, source: Optional[str], page: int = 1, limit: int = 20,
     refresh: bool = False, live: bool = True,
+    resume: Optional[Dict] = None,
 ) -> Dict:
     """Refresh, verify, rank, and finally paginate for both search entry points."""
-    enabled = live and scraper_engine.has_live_search_credentials(query, source)
+    enabled = bool(query) and live and scraper_engine.has_live_search_credentials(query, source)
     report = {
         "status": "local" if enabled else "unavailable", "cached": False,
         "providers": scraper_engine.live_search_providers(query, source) if enabled else [],
@@ -169,10 +172,13 @@ async def run_opportunity_search(
             logger.warning("Live search unavailable; keeping local results")
             report["status"] = "error"
 
-    candidates = await run_in_threadpool(search_opportunities_fts, query, None, source)
-    all_results = candidates if not source else await run_in_threadpool(
-        search_opportunities_fts, query, None,
-    )
+    if not query and resume:
+        available = await run_in_threadpool(get_opportunities, limit=get_opportunity_count(), offset=0)
+        all_results = await run_in_threadpool(rank_by_resume, available, resume, browse=True)
+        candidates = all_results if not source else await run_in_threadpool(rank_by_resume, [row for row in available if row.get("source_type") == source], resume, browse=True, source=source)
+    else:
+        candidates = await run_in_threadpool(search_opportunities_fts, query, None, source)
+        all_results = candidates if not source else await run_in_threadpool(search_opportunities_fts, query, None)
     source_counter = Counter(
         source_key for row in all_results
         for source_key in (row.get("matched_sources") or [row.get("source_type") or "other"])
@@ -184,11 +190,14 @@ async def run_opportunity_search(
     head = [dict(row, text_for_matching=" ".join(
         str(row.get(field) or "") for field in ("title", "description", "professor_name")
     )) for row in candidates[:200]]
-    try:
-        head = await run_in_threadpool(matcher.rank_candidates, query, head)
-    except Exception:
-        logger.warning("Semantic ranking unavailable; keeping evidence-based order")
+    if query:
+        try:
+            head = await run_in_threadpool(matcher.rank_candidates, query, head)
+        except Exception:
+            logger.warning("Semantic ranking unavailable; keeping evidence-based order")
     ranked = head + candidates[200:]
+    if resume:
+        ranked = await run_in_threadpool(rank_by_resume, ranked, resume)
     offset = (page - 1) * limit
     results = ranked[offset:offset + limit]
     for result in results:
@@ -264,6 +273,7 @@ async def startup_event():
     init_user_tables()
     init_mail_tables()
     init_post_tables()
+    init_resume_table()
     media_data_path = os.getenv("MEDIACRAWLER_DATA_PATH", "").strip()
     if media_data_path:
         try:
@@ -669,6 +679,7 @@ async def home(request: Request, page: int = Query(1, ge=1)):
     Shows personalized opportunities based on user preferences.
     """
     user = get_current_user_from_request(request)
+    resume = get_resume(user["id"], active_only=True) if user else None
     profile = None
     behaviors = None
     recommended_searches = []
@@ -736,6 +747,7 @@ async def home(request: Request, page: int = Query(1, ge=1)):
         "request": request,
         "user": user,
         "profile": profile,
+        "has_resume": bool(resume),
         "opportunities": opportunities,
         "recommended_searches": recommended_searches,
         "total_count": total_count,
@@ -755,6 +767,7 @@ async def search_page(
     source: str = Query(None, description="Source filter"),
     page: int = Query(1, ge=1),
     refresh: bool = Query(False, description="Bypass the live-search cache"),
+    sort: Literal["relevance", "resume"] = Query("relevance"),
 ):
     """
     Unified search page - aggregates results from all platforms,
@@ -762,6 +775,9 @@ async def search_page(
     If no query provided, browses latest opportunities.
     """
     user = get_current_user_from_request(request)
+    resume = get_resume(user["id"], active_only=True) if user else None
+    if sort == "resume" and not resume:
+        return RedirectResponse("/resume", status_code=302)
     
     limit = 20
     offset = (page - 1) * limit
@@ -775,15 +791,15 @@ async def search_page(
     source = filter_source
     search_shortcuts = build_external_search_links(q, filter_source)
     search_data = {}
-    live_search_enabled = scraper_engine.has_live_search_credentials(q, filter_source)
+    live_search_enabled = False if sort == "resume" and not q else scraper_engine.has_live_search_credentials(q, filter_source)
     live_search_attempted = False
     live_result_count = 0
     live_search_providers = scraper_engine.live_search_providers(q, filter_source) if live_search_enabled else []
 
-    if q:
-        if user:
+    if q or sort == "resume":
+        if user and q:
             record_user_behavior(user["id"], "search", q, "search")
-        search_data = await run_opportunity_search(q, filter_source, page, limit, refresh)
+        search_data = await run_opportunity_search(q, filter_source, page, limit, refresh, resume=resume if sort == "resume" else None)
         results = search_data["results"]
         total_count = search_data["total_count"]
     else:
@@ -851,6 +867,8 @@ async def search_page(
         "user": user,
         "query": q or "",
         "source": source,
+        "sort": sort,
+        "has_resume": bool(resume),
         "results": results,
         "total_count": total_count,
         "current_page": page,
@@ -883,6 +901,9 @@ async def opportunity_detail(request: Request, opp_id: str):
         raise HTTPException(status_code=404, detail="Opportunity not found")
     if opportunity.get("provider") == "user_post":
         return RedirectResponse(f"/posts/{opp_id}", status_code=302)
+    resume = get_resume(user["id"], active_only=True) if user else None
+    if resume:
+        opportunity["resume_match"] = match_resume(opportunity, resume)
     
     # Track click behavior
     if user:
@@ -938,24 +959,30 @@ async def api_get_opportunities(
 
 @app.get("/api/search")
 async def api_search(
-    q: str = Query(..., min_length=1, max_length=300, description="Search query"),
+    request: Request,
+    q: str = Query("", max_length=300, description="Search query"),
     limit: int = Query(20, ge=1, le=100),
     source: str = Query(None, description="Source filter"),
     page: int = Query(1, ge=1),
     refresh: bool = Query(False),
     live: bool = Query(True, description="Supplement the first page with live sources"),
+    sort: Literal["relevance", "resume"] = Query("relevance"),
 ):
     """The same verified, paginated, multi-platform search used by the website."""
     q = q.strip()
-    if not q:
+    if not q and sort != "resume":
         raise HTTPException(status_code=422, detail="Search query must not be blank")
     filter_source = validated_source(source)
-    data = await run_opportunity_search(q, filter_source, page, limit, refresh, live)
+    resume = get_resume(require_user(request)["id"], active_only=True) if sort == "resume" else None
+    if sort == "resume" and not resume:
+        raise HTTPException(422, detail="请先上传并确认简历，启用个人匹配。")
+    data = await run_opportunity_search(q, filter_source, page, limit, refresh, live, resume)
     return JSONResponse({
         "query": q, "results": data["results"], "count": len(data["results"]),
         "total": data["total_count"], "page": page,
         "total_pages": (data["total_count"] + limit - 1) // limit,
         "source": filter_source, "source_counts": data["source_hit_counts"],
+        "sort": sort,
         "live_search": data["live_search"],
     })
 

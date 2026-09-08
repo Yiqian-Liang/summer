@@ -38,6 +38,7 @@
             </button>
         </form>
     </div>
+    <p class="mt-4"><a href="{{ '/search?sort=resume' if has_resume else '/resume' }}" class="text-indigo-700 underline">{{ ('查看我的简历匹配机会' if has_resume else '上传简历，寻找与经历相关的机会') if i18n.is_zh() else ('View my resume matches' if has_resume else 'Upload a resume to find related opportunities') }}</a></p>
 </div>
 
 <!-- Recommended Searches (for logged in users with profile) -->
