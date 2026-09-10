@@ -9,3 +9,6 @@ venv/
 .venv/
 .DS_Store
 *.log
+.idea/
+MediaCrawler/
+outputs/

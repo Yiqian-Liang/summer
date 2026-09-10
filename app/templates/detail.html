@@ -75,6 +75,12 @@
                    class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
                     <i class="fas fa-envelope mr-2"></i>{{ '起草邮件' if i18n.is_zh() else 'Draft an email' }}
                 </a>
+                {% if opportunity.community_post_url %}
+                <a href="{{ opportunity.community_post_url }}"
+                   class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-white bg-amber-600 hover:bg-amber-700">
+                    <i class="fas fa-bullhorn mr-2"></i>{{ '发起新帖' if i18n.is_zh() else 'Post to community' }}
+                </a>
+                {% endif %}
                 {% if opportunity.provider == 'user_post' %}
                 <span class="inline-flex items-center text-sm text-amber-800">{{ '发布者自述 · 身份未核验' if i18n.is_zh() else 'Community post · identity unverified' }}</span>
                 {% if user and user.id == opportunity.owner_user_id %}

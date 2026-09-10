@@ -2,7 +2,7 @@
 import os
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -124,6 +124,49 @@ def _check_publishable(post):
         raise HTTPException(status_code=422, detail="发布前请至少提供联系邮箱或申请链接")
 
 
+def _prefill_value(raw: Optional[str], max_len: int) -> str:
+    if not raw:
+        return ""
+    cleaned = str(raw).replace("\r", " ").replace("\n", " ")
+    return cleaned[:max_len].strip()
+
+
+def _merge_prefill_post(request, post):
+    query = request.query_params
+    draft = {
+        "post_kind": query.get("post_kind", post.get("post_kind", "recruitment")).strip(),
+        "title": query.get("title", post.get("title", "")),
+        "university": query.get("university", post.get("university", "")),
+        "professor_name": query.get("professor_name", post.get("professor_name", "")),
+        "description": query.get("description", post.get("description", "")),
+        "requirements": query.get("requirements", post.get("requirements", "")),
+        "contact_email": query.get("contact_email", post.get("contact_email", "")),
+        "direct_apply_link": query.get("direct_apply_link", post.get("direct_apply_link", "")),
+        "deadline": query.get("deadline", post.get("deadline", "")),
+        "source_url_hint": query.get("source_url", ""),
+    }
+    if draft["post_kind"] not in {"recruitment", "experience", "discussion"}:
+        draft["post_kind"] = post.get("post_kind", "recruitment")
+    if draft["source_url_hint"]:
+        draft["source_url_hint"] = _prefill_value(draft["source_url_hint"], 300)
+    for field, limit in (
+        ("title", 180),
+        ("university", 160),
+        ("professor_name", 120),
+        ("description", 20000),
+        ("requirements", 8000),
+        ("contact_email", 254),
+        ("direct_apply_link", 2048),
+        ("deadline", 10),
+    ):
+        draft[field] = _prefill_value(draft[field], limit)
+    if draft["source_url_hint"] and (len(draft["description"]) + len(f" [source: {draft['source_url_hint']}]") <= 20000):
+        draft["description"] = (draft["description"] + f" [来源链接] {draft['source_url_hint']}").strip()
+    if draft["contact_email"] and not validate_email(draft["contact_email"]):
+        draft["contact_email"] = ""
+    return draft
+
+
 def _context(request, **extra):
     token = request.cookies.get("session_token")
     language = request.query_params.get("lang") or request.cookies.get("lang", DEFAULT_LANGUAGE)
@@ -187,7 +230,7 @@ def new_post_page(request: Request):
     user = get_current_user(request.cookies.get("session_token"))
     if not user:
         return RedirectResponse("/login?next=/posts/new", status_code=302)
-    return templates.TemplateResponse("post_form.html", _context(request, post={}))
+    return templates.TemplateResponse("post_form.html", _context(request, post=_merge_prefill_post(request, {})))
 
 
 @router.get("/posts/{post_id}/edit")

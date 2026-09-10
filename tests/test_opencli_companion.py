@@ -73,7 +73,11 @@ class OpenCLICompanionTest(unittest.TestCase):
                 "url": "https://www.xiaohongshu.com/explore/abc",
             }]
 
-        server = CompanionServer(0, {"https://summer.example"}, "opencli", 10, fake_search)
+        try:
+            server = CompanionServer(0, {"https://summer.example"}, "opencli", 10, fake_search)
+        except PermissionError:
+            self.skipTest("Local socket binding is blocked in this environment")
+
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         url = f"http://127.0.0.1:{server.server_address[1]}/v1/search/xiaohongshu"

@@ -17,6 +17,7 @@ from typing import Optional, Dict, List
 from collections import Counter
 from typing import Literal
 from pydantic import BaseModel, Field, ConfigDict, StrictBool
+from urllib.parse import urlencode
 import os
 import datetime
 import json
@@ -121,6 +122,36 @@ def validated_source(source: Optional[str]) -> Optional[str]:
     if source and source not in set(SOURCE_ALIASES.values()) | {"other"}:
         raise HTTPException(status_code=422, detail="Unknown search source")
     return source
+
+
+def _sanitize_prefill_value(value, max_length: int) -> str:
+    if not value:
+        return ""
+    normalized = str(value).replace("\r", " ").replace("\n", " ")
+    return (normalized[:max_length]).strip()
+
+
+def build_community_post_url(item: Dict) -> str:
+    if item.get("provider") == "user_post":
+        return ""
+    description = _sanitize_prefill_value(item.get("description", ""), 1200)
+    source_url = _sanitize_prefill_value(item.get("source_url", ""), 260)
+    if source_url:
+        description = f"{description} [source: {source_url}]".strip()
+    payload = {
+        "post_kind": "recruitment",
+        "title": _sanitize_prefill_value(item.get("title", ""), 180),
+        "university": _sanitize_prefill_value(item.get("university", ""), 160),
+        "professor_name": _sanitize_prefill_value(item.get("professor_name", ""), 120),
+        "description": description,
+        "contact_email": _sanitize_prefill_value(item.get("contact_email") or extract_email(item.get("description", "")) or "", 254),
+        "direct_apply_link": _sanitize_prefill_value(item.get("direct_apply_link", ""), 2048),
+        "deadline": _sanitize_prefill_value(item.get("deadline", ""), 10),
+    }
+    payload = {key: value for key, value in payload.items() if value}
+    if not payload.get("title"):
+        return ""
+    return "/posts/new?" + urlencode(payload)
 
 
 def sync_live_opportunities(query: str, source: Optional[str], refresh: bool) -> Dict:
@@ -830,6 +861,7 @@ async def search_page(
 
     # Common Post-Processing for both Search and Browse
     for result in results:
+        result["community_post_url"] = build_community_post_url(result)
         try:
             analysis = research_agent.analyze_match(q, result)
             result["tags"] = analysis.get("tags", [])
@@ -862,6 +894,15 @@ async def search_page(
         else:
             result["is_saved"] = False
     
+    community_related = []
+    if q and source != "community" and sort != "resume":
+        try:
+            community_related = await run_in_threadpool(search_opportunities_fts, q, 3, "community")
+            for post in community_related:
+                post["community_post_url"] = build_community_post_url(post)
+        except Exception:
+            logger.warning("Failed to load community-related opportunities")
+
     total_pages = (total_count + limit - 1) // limit if total_count > 0 else 1
     i18n = get_i18n(request)
     
@@ -885,6 +926,7 @@ async def search_page(
         "live_search_attempted": live_search_attempted,
         "live_result_count": live_result_count,
         "live_search_providers": live_search_providers,
+        "community_related": community_related,
         "live_search": {"status": "local"},
         **{key: value for key, value in search_data.items() if key != "results"},
         "i18n": i18n,
@@ -907,6 +949,9 @@ async def opportunity_detail(request: Request, opp_id: str):
     resume = get_resume(user["id"], active_only=True) if user else None
     if resume:
         opportunity["resume_match"] = match_resume(opportunity, resume)
+
+    if opportunity.get("provider") != "user_post":
+        opportunity["community_post_url"] = build_community_post_url(opportunity)
     
     # Track click behavior
     if user:

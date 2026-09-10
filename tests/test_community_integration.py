@@ -2,14 +2,13 @@
 import os
 import tempfile
 import unittest
+from urllib.parse import quote, quote_plus
 from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from app import auth, database
-with patch.dict(os.environ, {"DISABLE_LIVE_SEARCH": "1", "DISABLE_SEMANTIC_SEARCH": "1"}):
-    from app import main
+from app import auth, database, main
 
 
 class CommunityIntegrationTest(unittest.TestCase):
@@ -110,6 +109,55 @@ class CommunityIntegrationTest(unittest.TestCase):
         self.client.cookies.clear()
         self.assertEqual(self.client.get(f"/api/mail/context/{post_id}").status_code, 401)
         self.assertEqual(self.client.get(f"/mail?opportunity={post_id}", follow_redirects=False).status_code, 302)
+
+    def test_search_and_detail_can_jump_to_prefilled_post_form(self):
+        source_url = "https://lab.example.edu/ml-summer"
+        external_id = database.generate_opportunity_id(source_url)
+        database.upsert_opportunity({
+            "title": "ML summer research in Computer Vision",
+            "source_type": "university",
+            "source_url": source_url,
+            "professor_name": "Alex Chen",
+            "university": "Example University",
+            "description": "We recruit 2 interns for 2026 summer.",
+            "requirements": "Python background",
+            "quality_score": 72,
+            "provider": "manual",
+            "hiring_signals": "[]",
+            "has_direct_apply": 0,
+            "direct_apply_link": "",
+            "deadline": "",
+            "published_at": "2026-09-08",
+            "source_query": "",
+        })
+        search = self.client.get("/search?q=ML")
+        self.assertEqual(search.status_code, 200)
+        self.assertIn("/posts/new?post_kind=recruitment", search.text)
+        self.assertIn("ML+summer+research+in+Computer+Vision", search.text)
+
+        detail = self.client.get(f"/opportunity/{external_id}")
+        self.assertEqual(detail.status_code, 200)
+        prefill_anchor = quote_plus("ML summer research in Computer Vision")
+        self.assertIn("/posts/new?post_kind=recruitment&title=" + prefill_anchor, detail.text.replace("&amp;", "&"))
+
+        prefill = self.client.get(
+            "/posts/new",
+            params={
+                "post_kind": "recruitment",
+                "title": "ML summer research in Computer Vision",
+                "university": "Example University",
+                "professor_name": "Alex Chen",
+                "description": "Need\nline break",
+                "contact_email": "invalid@@example.com",
+                "source_url": "https://lab.example.edu/ml-summer",
+            },
+        ).context["post"]
+        self.assertEqual(prefill["title"], "ML summer research in Computer Vision")
+        self.assertEqual(prefill["university"], "Example University")
+        self.assertIn("Need line break", prefill["description"])
+        self.assertNotIn("\n", prefill["description"])
+        self.assertEqual(prefill["contact_email"], "")
+        self.assertEqual(prefill["source_url_hint"], "https://lab.example.edu/ml-summer")
 
     def test_private_and_non_recruitment_content_cannot_be_used_for_mail(self):
         for kind, status in (("recruitment", "draft"), ("recruitment", "closed"), ("experience", "published"), ("discussion", "published")):

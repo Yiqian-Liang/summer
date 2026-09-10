@@ -363,6 +363,12 @@
                         <i class="fas fa-paper-plane mr-1"></i> {{ i18n.t('home.apply') }}
                     </a>
                     {% endif %}
+                    {% if result.community_post_url %}
+                    <a href="{{ result.community_post_url }}"
+                       class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-full text-white bg-amber-600 hover:bg-amber-700 transition">
+                        <i class="fas fa-bullhorn mr-1"></i>{{ '发贴到社区' if i18n.is_zh() else 'Post to community' }}
+                    </a>
+                    {% endif %}
                     <a href="/mail?opportunity={{ result.id|urlencode }}" class="inline-flex items-center px-3 py-1.5 text-sm rounded-full text-indigo-600 bg-indigo-50 hover:bg-indigo-100">
                         <i class="fas fa-envelope mr-1"></i>{{ '起草邮件' if i18n.is_zh() else 'Draft email' }}
                     </a>
@@ -377,6 +383,29 @@
     </div>
     {% endfor %}
 </div>
+{% if query and community_related %}
+<section class="mt-8 bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+    <h3 class="text-lg font-semibold text-gray-900 mb-3">
+        <i class="fas fa-users mr-1.5 text-indigo-600"></i>{{ '相关社区贴' if i18n.is_zh() else 'Related community posts' }}
+    </h3>
+    <p class="text-sm text-gray-500 mb-4">{{ '看看同类信息怎么被用户复盘、补充和讨论。' if i18n.is_zh() else 'See how users discuss and extend similar opportunities here.' }}</p>
+    <div class="space-y-3">
+        {% for post in community_related %}
+        <article class="border border-gray-100 rounded-lg p-3">
+            <a class="text-indigo-700 hover:text-indigo-900 font-medium block"
+               href="/posts/{{ post.id|urlencode }}">{{ (post.title or '（无标题）')|escape }}</a>
+            <p class="text-xs text-gray-500 mt-1">{{ post.university or '' }}{% if post.university and post.professor_name %} · {% endif %}{{ post.professor_name or '' }}</p>
+            <p class="mt-2 text-sm text-gray-600">{{ (post.description or '')[:140]|escape }}{% if post.description and post.description|length > 140 %}...{% endif %}</p>
+            {% if post.community_post_url %}
+            <a href="{{ post.community_post_url }}" class="inline-flex items-center mt-2 text-xs text-indigo-600 hover:underline">
+                <i class="fas fa-pencil-alt mr-1"></i>{{ '基于当前机会快速发帖' if i18n.is_zh() else 'Create a related post' }}
+            </a>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
 
 <!-- Pagination -->
 {% if total_pages > 1 %}
@@ -404,6 +433,29 @@
 {% endif %}
 
 {% else %}
+{% if query and community_related %}
+<section class="mt-2 bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+    <h3 class="text-lg font-semibold text-gray-900 mb-3">
+        <i class="fas fa-users mr-1.5 text-indigo-600"></i>{{ '相关社区贴' if i18n.is_zh() else 'Related community posts' }}
+    </h3>
+    <p class="text-sm text-gray-500 mb-4">{{ '看看同类信息怎么被用户复盘、补充和讨论。' if i18n.is_zh() else 'See how users discuss and extend similar opportunities here.' }}</p>
+    <div class="space-y-3">
+        {% for post in community_related %}
+        <article class="border border-gray-100 rounded-lg p-3">
+            <a class="text-indigo-700 hover:text-indigo-900 font-medium block"
+               href="/posts/{{ post.id|urlencode }}">{{ (post.title or '（无标题）')|escape }}</a>
+            <p class="text-xs text-gray-500 mt-1">{{ post.university or '' }}{% if post.university and post.professor_name %} · {% endif %}{{ post.professor_name or '' }}</p>
+            <p class="mt-2 text-sm text-gray-600">{{ (post.description or '')[:140]|escape }}{% if post.description and post.description|length > 140 %}...{% endif %}</p>
+            {% if post.community_post_url %}
+            <a href="{{ post.community_post_url }}" class="inline-flex items-center mt-2 text-xs text-indigo-600 hover:underline">
+                <i class="fas fa-pencil-alt mr-1"></i>{{ '基于当前机会快速发帖' if i18n.is_zh() else 'Create a related post' }}
+            </a>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
 <!-- Empty State -->
 <div id="serverEmptyState" class="text-center py-16 bg-white rounded-lg shadow-sm border border-gray-200">
     <div class="text-6xl text-gray-300 mb-4"><i class="fas fa-search"></i></div>

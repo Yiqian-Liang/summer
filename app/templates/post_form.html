@@ -5,6 +5,9 @@
     <a href="/posts/mine" class="text-sm text-indigo-600 hover:underline">← 我的帖子</a>
     <h1 class="text-3xl font-bold text-gray-900 mt-4">{{ '编辑帖子' if post.id else '创建帖子' }}</h1>
     <p class="text-gray-600 mt-2">先保存草稿，准备好后点击发布。招募帖也会进入项目搜索；经验与讨论留在社区。</p>
+    {% if post.source_url_hint %}
+    <p class="text-sm text-gray-600 mt-2">来源：<a href="{{ post.source_url_hint }}" target="_blank" class="text-indigo-600 hover:underline">{{ post.source_url_hint }}</a></p>
+    {% endif %}
     <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-900 mt-5">发布者身份尚未核验。请仅发布你有权代表的团队招募信息；不要公开他人的私人信息。</div>
     <form id="post-form" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 sm:p-8 mt-6 space-y-5">
         <div class="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
