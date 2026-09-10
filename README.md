@@ -31,6 +31,18 @@ An AI-driven platform for matching students with Summer Research and PhD opportu
 *   **数据采集**: SerpApi + Gemini Grounding + MediaCrawler 导入 + BeautifulSoup
 *   **数据库**: SQLite (内置向量存储与 Agent 分析记录)
 
+## 文档索引
+
+- [邮箱工作台（邮件起草/附件/OAuth）](docs/mail-workspace.md)
+- [社区帖子与评论（招募/经验/讨论）](docs/community-posts.md)
+- [简历上传与匹配（带证据链）](docs/resume-matching.md)
+- [搜索与推荐机制（排序/反馈/冷启动）](docs/search-and-recommendation.md)
+- [AI 集成策略（免费/付费边界）](docs/ai-integration.md)
+- [接口速查（邮件/社区/搜索/推荐）](docs/api-reference.md)
+- [推荐算法设计（2026-09-08）](outputs/recommendation-algorithm-2026-09-08.md)
+- [搜索完善检查记录（2026-09-07）](outputs/search-improvements-2026-09-07.md)
+- [GitHub 搜索栈回顾（2026-07-26）](outputs/github-search-stack-review-2026-07-26.md)
+
 ---
 
 ## 🇺🇸 English Introduction
