@@ -137,6 +137,35 @@ class RecommendationTests(unittest.TestCase):
         self.client.cookies.clear()
         self.assertEqual(self.client.post("/api/recommendations/feedback", json={"action": "restore"}).status_code, 401)
 
+    def test_saved_progress_api_validates_and_updates_fields(self):
+        self.seed([opportunity("progress-target")])
+        self.assertEqual(self.client.post("/api/save/progress-target", headers=self.headers).status_code, 200)
+
+        base = self.client.get("/api/saved", headers=self.headers).json()["saved"]
+        self.assertEqual(len(base), 1)
+        self.assertEqual(base[0]["progress_stage"], "preparing")
+        self.assertEqual(base[0]["reminder_days"], 7)
+        self.assertEqual(base[0]["progress_notes"], "")
+
+        failed = self.client.post("/api/saved/progress-target/progress", headers=self.headers, json={})
+        self.assertEqual(failed.status_code, 422)
+        updated = self.client.post("/api/saved/progress-target/progress", headers=self.headers, json={
+            "progress_stage": "contacted",
+            "reminder_days": 10,
+            "progress_notes": "已发出第一封邮件",
+        }).json()
+        self.assertTrue(updated["success"])
+
+        saved = self.client.get("/api/saved", headers=self.headers).json()["saved"][0]
+        self.assertEqual(saved["progress_stage"], "contacted")
+        self.assertEqual(saved["reminder_days"], 10)
+        self.assertEqual(saved["progress_notes"], "已发出第一封邮件")
+
+        self.assertEqual(self.client.post("/api/saved/progress-target/progress", headers=self.headers, json={"reminder_days": 31}).status_code, 422)
+        self.assertEqual(self.client.post("/api/saved/unknown/progress", headers=self.headers, json={"progress_stage": "applied"}).status_code, 404)
+        self.client.cookies.clear()
+        self.assertEqual(self.client.post("/api/saved/progress-target/progress", json={"progress_stage": "applied"}).status_code, 401)
+
     def test_home_paginates_after_ranking_and_recent_mode_keeps_no_private_evidence(self):
         rows = [opportunity(str(i), published_at=f"2026-09-{1 + i % 8:02d}") for i in range(45)]
         self.seed(rows)

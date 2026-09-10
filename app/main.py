@@ -39,7 +39,8 @@ from app.database import (
     init_user_tables, create_user, get_user_by_email, get_user_by_username,
     get_user_by_id, update_user_last_login, save_user_profile, get_user_profile,
     record_user_behavior, save_opportunity as db_save_opportunity,
-    unsave_opportunity, get_user_saved, is_opportunity_saved,
+    unsave_opportunity, get_user_saved, is_opportunity_saved, get_user_saved_entry,
+    update_saved_progress,
     # Password reset
     create_password_reset_token, verify_reset_token, use_reset_token, update_user_password
 )
@@ -64,6 +65,7 @@ from app.mail_oauth import router as mail_oauth_router
 from app.posts import router as posts_router, init_post_tables
 from app.resumes import router as resume_router, init_resume_table, get_resume, rank_by_resume, match_resume
 from app.database import get_recommendation_state, update_recommendation_feedback
+from app.search_ranking import _parse_date
 
 app = FastAPI(title="Summer Research Platform")
 app.include_router(mail_router)
@@ -122,6 +124,41 @@ def validated_source(source: Optional[str]) -> Optional[str]:
     if source and source not in set(SOURCE_ALIASES.values()) | {"other"}:
         raise HTTPException(status_code=422, detail="Unknown search source")
     return source
+
+
+SAVED_PROGRESS_STAGES = ("preparing", "contacted", "applied", "replied")
+
+
+def _safe_int(value, fallback: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _deadline_days_left(deadline: Optional[str]) -> Optional[int]:
+    parsed = _parse_date(deadline)
+    if not parsed:
+        return None
+    return (parsed.date() - datetime.datetime.utcnow().date()).days
+
+
+def _attach_saved_progress(opp: Dict, saved_item: Dict) -> None:
+    opp["notes"] = saved_item.get("notes") or ""
+    opp["progress_stage"] = saved_item.get("progress_stage") or "preparing"
+    opp["progress_notes"] = saved_item.get("progress_notes") or ""
+    opp["reminder_days"] = _safe_int(saved_item.get("reminder_days"), 7)
+    opp["progress_updated_at"] = saved_item.get("progress_updated_at")
+
+    deadline_days = _deadline_days_left(opp.get("deadline", ""))
+    opp["deadline_days_left"] = deadline_days
+    opp["reminder_due"] = bool(deadline_days is not None and deadline_days <= opp["reminder_days"])
+    if deadline_days is not None and deadline_days < 0:
+        opp["deadline_status"] = "overdue"
+    elif opp["reminder_due"]:
+        opp["deadline_status"] = "soon"
+    else:
+        opp["deadline_status"] = "ok"
 
 
 def _sanitize_prefill_value(value, max_length: int) -> str:
@@ -1193,6 +1230,13 @@ class RecommendationFeedback(BaseModel):
     enabled: Optional[StrictBool] = None
 
 
+class SavedProgressUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    progress_stage: Optional[Literal["preparing", "contacted", "applied", "replied"]] = None
+    reminder_days: Optional[int] = Field(default=None, ge=1, le=30)
+    progress_notes: Optional[str] = Field(default=None, min_length=0, max_length=500)
+
+
 @app.post("/api/recommendations/feedback")
 async def recommendation_feedback(request: Request, payload: RecommendationFeedback):
     user = require_csrf(request)
@@ -1230,6 +1274,43 @@ async def unsave_opportunity_api(request: Request, opportunity_id: str):
     return JSONResponse({"success": success})
 
 
+@app.post("/api/saved/{opportunity_id}/progress")
+async def update_saved_progress_api(request: Request, opportunity_id: str, payload: SavedProgressUpdate):
+    """Update progress, reminder days and notes for a saved opportunity."""
+    user = require_csrf(request)
+
+    if payload.progress_stage is None and payload.reminder_days is None and payload.progress_notes is None:
+        raise HTTPException(422, "请至少填写一个更新项。")
+
+    saved_entry = get_user_saved_entry(user["id"], opportunity_id)
+    if not saved_entry:
+        raise HTTPException(404, "该机会未收藏。")
+
+    notes = payload.progress_notes
+    if notes is not None:
+        notes = notes.strip()
+
+    success = update_saved_progress(
+        user["id"],
+        opportunity_id,
+        stage=payload.progress_stage,
+        reminder_days=payload.reminder_days,
+        notes=notes,
+    )
+
+    if not success:
+        raise HTTPException(500, "收藏进度保存失败，请稍后重试。")
+
+    item = get_user_saved_entry(user["id"], opportunity_id)
+    return {
+        "success": True,
+        "opportunity_id": opportunity_id,
+        "progress_stage": (item or saved_entry).get("progress_stage", "preparing"),
+        "reminder_days": (item or saved_entry).get("reminder_days", 7),
+        "progress_notes": (item or saved_entry).get("progress_notes", ""),
+    }
+
+
 @app.get("/api/saved")
 async def get_saved_api(request: Request):
     """Get user's saved opportunities."""
@@ -1245,7 +1326,7 @@ async def get_saved_api(request: Request):
         opp = get_opportunity_by_id(item["opportunity_id"])
         if opp:
             opp["saved_at"] = item["created_at"]
-            opp["notes"] = item["notes"]
+            _attach_saved_progress(opp, item)
             opportunities.append(opp)
     
     return JSONResponse({"saved": opportunities})
@@ -1304,7 +1385,7 @@ async def saved_page(request: Request):
         opp = get_opportunity_by_id(item["opportunity_id"])
         if opp:
             opp["saved_at"] = item["created_at"]
-            opp["notes"] = item["notes"]
+            _attach_saved_progress(opp, item)
             try:
                 opp["hiring_signals_list"] = json.loads(opp.get("hiring_signals") or "[]")
             except:

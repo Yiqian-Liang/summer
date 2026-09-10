@@ -50,6 +50,7 @@
 
 - 点击保存：`POST /api/track`
 - 收藏：`POST /api/save/{opportunity_id}`，移除：`DELETE /api/save/{opportunity_id}`，获取：`GET /api/saved`
+  - 每条收藏还可在 `POST /api/saved/{opportunity_id}/progress` 更新阶段（准备中/已联系/已申请/收到回复）、提醒天数与备注。
 - 推荐反馈：`POST /api/recommendations/feedback`
   - `hide/unhide`
   - `restore`
@@ -65,3 +66,9 @@
 
 - 平台不做“录取概率预测”；给出的只是当前证据/偏好的匹配排序。
 - 个人信息不跨用户共享；不做全局行为协同（当前版本无训练模型写回）。
+
+## 收藏进度与催办提醒（文档化实现）
+
+- 收藏列表会展示截止日期状态：正常、临近截止、逾期。
+- 用户可给每条收藏设置阶段与备注，帮助自己跟进。
+- 提醒天数会与截止日期联动用于页面提醒，不会影响公共排序权重。

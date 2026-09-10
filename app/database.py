@@ -438,10 +438,29 @@ def init_user_tables():
             "user_id": int,
             "opportunity_id": str,
             "notes": str,
+            "progress_stage": str,
+            "progress_notes": str,
+            "reminder_days": int,
+            "progress_updated_at": str,
             "created_at": str,
         }, pk="id", foreign_keys=[("user_id", "users", "id")])
         db["user_saved"].create_index(["user_id", "opportunity_id"], unique=True)
         logger.info("Created 'user_saved' table.")
+
+    else:
+        saved_cols = db["user_saved"].columns_dict
+        if "progress_stage" not in saved_cols:
+            db["user_saved"].add_column("progress_stage", str, not_null_default="preparing")
+            logger.info("Added 'progress_stage' to user_saved.")
+        if "progress_notes" not in saved_cols:
+            db["user_saved"].add_column("progress_notes", str)
+            logger.info("Added 'progress_notes' to user_saved.")
+        if "reminder_days" not in saved_cols:
+            db["user_saved"].add_column("reminder_days", int, not_null_default=7)
+            logger.info("Added 'reminder_days' to user_saved.")
+        if "progress_updated_at" not in saved_cols:
+            db["user_saved"].add_column("progress_updated_at", str)
+            logger.info("Added 'progress_updated_at' to user_saved.")
 
     db.execute("""CREATE TABLE IF NOT EXISTS recommendation_settings (
         user_id INTEGER PRIMARY KEY, use_behavior INTEGER NOT NULL DEFAULT 1
@@ -614,6 +633,10 @@ def save_opportunity(user_id: int, opportunity_id: str, notes: str = "") -> bool
             "user_id": user_id,
             "opportunity_id": opportunity_id,
             "notes": notes,
+            "progress_stage": "preparing",
+            "progress_notes": "",
+            "reminder_days": 7,
+            "progress_updated_at": datetime.now().isoformat(),
             "created_at": datetime.now().isoformat(),
         })
         return True
@@ -641,6 +664,48 @@ def get_user_saved(user_id: int) -> List[Dict]:
     db = get_db()
     rows = list(db["user_saved"].rows_where("user_id = ?", [user_id], order_by="-created_at"))
     return rows
+
+
+def get_user_saved_entry(user_id: int, opportunity_id: str) -> Optional[Dict]:
+    """Get a single saved row for a user and opportunity."""
+    db = get_db()
+    try:
+        rows = list(db["user_saved"].rows_where(
+            "user_id = ? AND opportunity_id = ?", [user_id, opportunity_id]
+        ))
+        return rows[0] if rows else None
+    finally:
+        db.conn.close()
+
+
+def update_saved_progress(user_id: int, opportunity_id: str, stage: str = None,
+                         reminder_days: int = None, notes: str = None) -> bool:
+    """Update the progress status or reminders for a saved opportunity."""
+    db = get_db()
+    try:
+        item = get_user_saved_entry(user_id, opportunity_id)
+        if not item:
+            return False
+
+        updates = {"progress_updated_at": datetime.now().isoformat()}
+        if stage is not None:
+            updates["progress_stage"] = stage
+        if reminder_days is not None:
+            updates["reminder_days"] = reminder_days
+        if notes is not None:
+            updates["progress_notes"] = notes
+        if len(updates) == 1:
+            return True
+
+        try:
+            with db.conn:
+                db["user_saved"].update(item["id"], updates)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating saved progress: {e}")
+            return False
+    finally:
+        db.conn.close()
 
 
 def create_password_reset_token(user_id: int) -> str:

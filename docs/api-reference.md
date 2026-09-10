@@ -76,6 +76,7 @@ OAuth |
 | `POST` | `/api/recommendations/feedback` | 反馈（hide/unhide/restore/clear_history/set_learning） |
 | `POST` | `/api/save/{opportunity_id}` | 收藏 |
 | `DELETE` | `/api/save/{opportunity_id}` | 取消收藏 |
+| `POST` | `/api/saved/{opportunity_id}/progress` | 更新收藏进度（阶段/提醒天数/备注） |
 | `GET` | `/api/saved` | 我的收藏列表 |
 | `GET` | `/api/source-preview/{opp_id}` | 源页面摘要 |
 | `POST` | `/api/track` | 行为记录（search/click） |
