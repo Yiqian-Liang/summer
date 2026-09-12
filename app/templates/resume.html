@@ -5,7 +5,7 @@
 <div class="max-w-4xl mx-auto space-y-5">
     <div class="flex flex-wrap justify-between gap-3 items-start">
         <div><h1 class="text-2xl font-bold">{{ '用你的研究经历找机会' if zh else 'Find opportunities from your research background' }}</h1><p class="text-gray-600 mt-2">{{ '上传简历，核对匹配词，再看哪些机会提到了相同方向与技能。' if zh else 'Upload a resume, review its keywords, then find opportunities mentioning the same topics and skills.' }}</p></div>
-        <a href="/search?sort=resume" class="rounded-md bg-indigo-600 text-white px-4 py-2">{{ '查看匹配机会' if zh else 'View matches' }}</a>
+        <div class="flex flex-wrap gap-2"><a href="/resume/review" class="rounded-md border bg-white px-4 py-2 text-indigo-700">{{ '检查当前简历' if zh else 'Review resume' }}</a><a href="/search?sort=resume" class="rounded-md bg-indigo-600 text-white px-4 py-2">{{ '查看匹配机会' if zh else 'View matches' }}</a></div>
     </div>
     <p class="bg-indigo-50 text-indigo-900 p-4 rounded-lg text-sm">{{ '本地解析，无 AI 调用费。原文件不留存；只在点击确认后保存你核对过的文字与匹配词，仅本人可见。不会自动加入邮件或发送给外部 AI。' if zh else 'Local parsing, no AI fees. Original files are not retained. Only reviewed text and keywords are saved after confirmation, visible only to you. Nothing is automatically added to emails or sent to external AI.' }}</p>
     <p id="resumeStatus" role="status" aria-live="polite" class="text-sm whitespace-pre-wrap"></p>

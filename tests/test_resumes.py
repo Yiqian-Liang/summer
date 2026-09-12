@@ -176,6 +176,67 @@ class ResumeTests(unittest.TestCase):
         for changes in ({"keywords": ["not in resume"]}, {"keywords": ["mail@example.edu"]}, {"text": "x"}, {"enabled": "true"}, {"keywords": ["x"] * 21}):
             self.assertEqual(self.client.put("/api/resume", json={**self.payload, **changes}, headers=self.headers).status_code, 422)
 
+    def test_review_is_local_evidence_based_and_has_no_score(self):
+        text = """Education
+BSc Computer Science, Example University 2022/09 - 2026/06
+Research Experience
+- Developed a PyTorch classifier using Python and improved accuracy by 12%.
+- Responsible for experiments.
+- Responsible for documentation.
+Skills
+Python, PyTorch"""
+        self.save(text=text, keywords=["Python", "PyTorch"])
+        self.seed()
+        with patch.object(main.matcher, "rank_candidates", side_effect=AssertionError("Resume review must not call a model")), \
+                patch.object(main.research_agent, "analyze_match", side_effect=AssertionError("Resume review must not call AI")):
+            response = self.client.get("/api/resume/review?opportunity_id=robot-0")
+            page = self.client.get("/resume/review?opportunity_id=robot-0")
+        self.assertEqual(response.status_code, 200, response.text)
+        review = response.json()["review"]
+        self.assertTrue(all(item["status"] == "found" for item in review["sections"]))
+        self.assertEqual(review["date_consistency"]["status"], "consistent")
+        self.assertEqual(review["experience_bullets"]["items"][0]["action_evidence"], "Developed")
+        self.assertIn("PyTorch", review["experience_bullets"]["items"][0]["method_evidence"])
+        self.assertTrue(review["experience_bullets"]["items"][0]["result_evidence"])
+        self.assertEqual(review["vague_phrases"], [{"phrase": "responsible for", "count": 2, "status": "review"}])
+        self.assertEqual({item["keyword"] for item in review["opportunity"]["matched_evidence"]}, {"Python", "PyTorch"})
+        missing = {item["keyword"] for item in review["opportunity"]["missing_terms_for_review"]}
+        self.assertTrue({"Robotics", "ROS"} <= missing)
+        self.assertNotIn('"score"', json.dumps(review))
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("简历和项目都有依据", page.text)
+        self.assertIn("这不代表你不会", page.text)
+
+    def test_review_auth_missing_resume_dates_and_private_import_ownership(self):
+        self.client.cookies.clear()
+        self.assertEqual(self.client.get("/api/resume/review").status_code, 401)
+        redirect = self.client.get("/resume/review?opportunity_id=private-1", follow_redirects=False)
+        self.assertEqual(redirect.status_code, 302)
+        self.assertIn("next=%2Fresume%2Freview%3Fopportunity_id%3Dprivate-1", redirect.headers["location"])
+
+        self.login(1)
+        self.assertEqual(self.client.get("/api/resume/review").status_code, 404)
+        self.save(text="Research Experience\n- Built Python tools.\nSkills\nPython", keywords=["Python"])
+        imported = {"id": "private-1", "title": "Private lead", "source_url": "https://example.test/private",
+            "description": "Seeking a student with SQL experience.", "requirements": "", "is_external": True}
+        owner_lookup = lambda user_id, opportunity_id: imported if user_id == 1 and opportunity_id == "private-1" else None
+        with patch.object(resumes, "get_opportunity_by_id", return_value=None), \
+                patch.object(resumes, "get_saved_application", side_effect=owner_lookup):
+            own = self.client.get("/api/resume/review?opportunity_id=private-1")
+            self.login(2)
+            self.save(text="Research Experience\n- Built Python tools.\nSkills\nPython", keywords=["Python"])
+            other = self.client.get("/api/resume/review?opportunity_id=private-1")
+        self.assertEqual(own.status_code, 200, own.text)
+        self.assertTrue(own.json()["review"]["opportunity"]["private_import"])
+        self.assertEqual(own.json()["review"]["opportunity"]["missing_terms_for_review"][0]["keyword"], "SQL")
+        self.assertEqual(other.status_code, 404)
+
+        missing_dates = resumes.review_resume({"text": "Education\nResearch Experience\n- Participated in experiments.\nSkills\nPython", "keywords": ["Python"]})
+        self.assertEqual(missing_dates["date_consistency"]["issues"][0]["code"], "dates_missing")
+        self.assertIn("action", missing_dates["experience_bullets"]["items"][0]["review"])
+        reversed_dates = resumes.review_resume({"text": "Education\n2026/06 - 2022/09\nResearch Experience\n- Built Python tools.\nSkills\nPython", "keywords": ["Python"]})
+        self.assertIn("reversed_range", {item["code"] for item in reversed_dates["date_consistency"]["issues"]})
+
 
 if __name__ == "__main__":
     unittest.main()

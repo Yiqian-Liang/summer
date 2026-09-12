@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.auth import csrf_token_for, get_current_user, require_csrf, require_user, validate_email
 from app.database import get_db, record_user_behavior
 from app.i18n import DEFAULT_LANGUAGE, I18n, LANGUAGES
+from app.rate_limits import enforce_rate_limit
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -250,6 +251,7 @@ def edit_post_page(request: Request, post_id: str):
 def create_post(request: Request, payload: PostInput):
     user = require_user(request)
     require_csrf(request)
+    enforce_rate_limit(request, "post_create", 30, 3600, user["id"])
     now = datetime.now(timezone.utc).isoformat()
     post_id = "post-" + uuid4().hex
     post = {
@@ -289,6 +291,8 @@ def update_post(request: Request, post_id: str, payload: PostInput):
 def change_post_status(request: Request, post_id: str, payload: PostStatus):
     user = require_user(request)
     require_csrf(request)
+    if payload.status == "published":
+        enforce_rate_limit(request, "post_publish", 30, 86400, user["id"])
     db = get_db()
     try:
         post = _owned_post(db, post_id, user["id"])
@@ -346,6 +350,7 @@ def post_detail_page(request: Request, post_id: str, page: int = Query(1, ge=1, 
 def add_comment(request: Request, post_id: str, payload: CommentInput):
     user = require_user(request)
     require_csrf(request)
+    enforce_rate_limit(request, "comment_create", 60, 3600, user["id"])
     db = get_db()
     try:
         _public_post(db, post_id)

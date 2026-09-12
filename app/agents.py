@@ -5,7 +5,7 @@ import requests
 import re
 import urllib.parse
 
-from app.search_utils import text_contains_term
+from app.search_utils import build_query_concepts, text_contains_term
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -98,8 +98,15 @@ class ResearchAgent:
         Generates tags and extracts key info for the opportunity.
         Returns a dictionary with 'tags' and 'research_focus'.
         """
-        candidate_text = candidate_profile.get('text_for_matching', '') or candidate_profile.get('description', '')
         title = candidate_profile.get('title', '')
+        source_parts = [
+            title,
+            candidate_profile.get('description', ''),
+            candidate_profile.get('requirements', ''),
+            candidate_profile.get('text_for_matching', ''),
+        ]
+        source_parts = [str(value) for value in source_parts if value]
+        candidate_text = " ".join(source_parts[1:])
 
         # Generate tags based on content
         tags = self._generate_tags(title, candidate_text)
@@ -115,9 +122,48 @@ class ResearchAgent:
             "suggested_action": ""
         }
 
+        concepts = build_query_concepts(student_query)
+        matched = []
+        for concept in concepts:
+            evidence = next(
+                ((term, source) for term in concept for source in source_parts if text_contains_term(source, term)),
+                None,
+            )
+            if evidence:
+                term, source = evidence
+                source = re.sub(r"\s+", " ", source).strip()
+                excerpt = next(
+                    (source[index:index + 240] for index in range(0, len(source), 160)
+                     if text_contains_term(source[index:index + 240], term)),
+                    source[:240],
+                )
+                matched.append({"term": term, "excerpt": excerpt})
+        chinese = bool(re.search(r"[\u3400-\u9fff]", student_query))
+        if matched:
+            evidence_terms = [item["term"] for item in matched[:4]]
+            result.update({
+                "verdict": "找到方向依据" if chinese else "Shared research evidence found",
+                "reasoning": ("项目文字中找到：" if chinese else "The posting contains: ") + ("、" if chinese else ", ").join(evidence_terms),
+                "suggested_action": "继续核对申请要求和原文" if chinese else "Review the requirements and original source",
+                "evidence_terms": evidence_terms,
+                "evidence": matched[:4],
+            })
+        else:
+            result.update({
+                "verdict": "需要进一步核对" if chinese else "More review needed",
+                "reasoning": "当前项目文字中未找到与你输入方向直接对应的证据。" if chinese else "The current posting text does not show direct evidence for the entered topic.",
+                "suggested_action": "查看原文，不要仅凭此结果排除机会" if chinese else "Check the source before ruling the opportunity out",
+                "evidence_terms": [],
+                "evidence": [],
+            })
+
         if use_llm and self.api_key and student_query:
             llm_result = self._call_llm_reasoning(student_query, candidate_profile)
-            result.update(llm_result)
+            if isinstance(llm_result, dict):
+                for key, limit in (("verdict", 80), ("reasoning", 600), ("suggested_action", 160)):
+                    value = llm_result.get(key)
+                    if isinstance(value, str) and value.strip():
+                        result[key] = value.strip()[:limit]
             
         return result
 
@@ -223,13 +269,9 @@ class ResearchAgent:
         Uses Gemini to analyze the match between the student's query and the opportunity profile.
         """
         if not self.api_key:
-            return {
-                "verdict": "",
-                "reasoning": "",
-                "suggested_action": ""
-            }
+            return {}
 
-        candidate_text = profile.get('text_for_matching', '') or profile.get('description', '')
+        candidate_text = " ".join(str(profile.get(field) or "") for field in ("description", "requirements", "text_for_matching"))
         title = profile.get('title', '')
 
         prompt = f"""
@@ -262,21 +304,13 @@ class ResearchAgent:
                 try:
                     text = text.replace("```json", "").replace("```", "").strip()
                     result = json.loads(text)
-                    return result
+                    return result if isinstance(result, dict) else {}
                 except:
-                    return {
-                        "verdict": "AI Analysis",
-                        "reasoning": text[:100],
-                        "suggested_action": "Check details"
-                    }
+                    return {}
         except Exception as e:
             logger.error(f"LLM Reasoning Error: {e}")
 
-        return {
-            "verdict": "",
-            "reasoning": "",
-            "suggested_action": ""
-        }
+        return {}
 
     def summarize_research(self, raw_text: str) -> str:
         """

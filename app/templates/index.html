@@ -56,6 +56,38 @@
 </div>
 {% endif %}
 
+{% if user and today_tasks %}
+<section class="bg-white rounded-xl border border-amber-200 shadow-sm p-5 mb-8" aria-labelledby="todayTasksTitle">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+            <h2 id="todayTasksTitle" class="text-xl font-bold text-gray-900"><i class="fas fa-calendar-check text-amber-500 mr-2"></i>{{ '今天该做什么' if i18n.is_zh() else 'What to do today' }}</h2>
+            <p class="text-sm text-gray-600 mt-1">{{ '临近截止、需要跟进或仍待核验的申请' if i18n.is_zh() else 'Applications nearing a deadline, awaiting follow-up or needing verification' }}</p>
+        </div>
+        <div class="flex gap-3 text-sm">
+            <a href="/api/applications/calendar.ics" class="text-indigo-700 hover:underline"><i class="far fa-calendar-alt mr-1"></i>{{ '导出日历' if i18n.is_zh() else 'Export calendar' }}</a>
+            <a href="/applications" class="text-indigo-700 hover:underline">{{ '查看全部申请' if i18n.is_zh() else 'View applications' }} →</a>
+        </div>
+    </div>
+    <ul class="grid gap-3 md:grid-cols-2">
+        {% for task in today_tasks[:6] %}
+        {% set task_id = task.opportunity_id|default(task.id, true) %}
+        {% set task_title = task.custom_title|default(task.title, true)|default('未命名机会' if i18n.is_zh() else 'Untitled opportunity', true) %}
+        <li class="rounded-lg bg-amber-50 border border-amber-100 p-3">
+            <a href="/applications#application-{{ task_id|urlencode }}" class="font-medium text-gray-900 hover:text-indigo-700">{{ task_title }}</a>
+            <p class="text-sm text-amber-900 mt-1">
+                {% if 'next_action' in task.task_reasons|default([]) %}<span class="mr-2">{{ '下一步到期' if i18n.is_zh() else 'Next action due' }}</span>{% endif %}
+                {% if 'deadline' in task.task_reasons|default([]) %}<span class="mr-2">{{ '截止临近' if i18n.is_zh() else 'Deadline near' }}</span>{% endif %}
+                {% if 'verify_source' in task.task_reasons|default([]) %}<span>{{ '信息待核验' if i18n.is_zh() else 'Details to verify' }}</span>{% endif %}
+                {% if 'missing_resume' in task.task_reasons|default([]) %}<span>{{ '缺少当前简历' if i18n.is_zh() else 'Current resume missing' }}</span>{% endif %}
+                {% if not task.task_reasons %}{{ task.action_reason|default(task.next_action_label, true)|default(('核对下一步与截止日期' if i18n.is_zh() else 'Review the next action and deadline'), true) }}{% endif %}
+            </p>
+            {% if task.next_action_at %}<p class="text-xs text-gray-500 mt-1">{{ '下一步：' if i18n.is_zh() else 'Next: ' }}{{ task.next_action_at|string|truncate(16, true, '') }}</p>{% elif task.deadline %}<p class="text-xs text-gray-500 mt-1">{{ '截止：' if i18n.is_zh() else 'Deadline: ' }}{{ task.deadline }}</p>{% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}
+
 <!-- Stats Bar -->
 <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-8">
     <div class="flex flex-wrap justify-center gap-8 text-center">
@@ -295,35 +327,12 @@
     </div>
     <h3 class="text-lg font-medium text-gray-900 mb-2">{{ i18n.t('home.no_opportunities') }}</h3>
     <p class="text-gray-500 mb-6">{{ ('可在“管理我的推荐”中恢复隐藏机会，或继续按关键词搜索。' if i18n.is_zh() else 'Restore hidden opportunities in recommendation settings, or search by keyword.') if hidden_count else ('可以尝试按研究方向搜索更多来源。' if i18n.is_zh() else 'Try searching more sources by research topic.') }}</p>
-    <div class="flex justify-center gap-4">
+    <div class="flex justify-center">
         <a href="/search?q=machine+learning" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
             <i class="fas fa-search mr-2"></i> {{ i18n.t('home.try_search') }}
         </a>
-        {% if not hidden_count %}<button onclick="triggerCollection()" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            <i class="fas fa-sync mr-2"></i> {{ i18n.t('home.collect_data') }}
-        </button>{% endif %}
     </div>
 </div>
-
-<script>
-async function triggerCollection() {
-    const btn = event.target;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> {{ i18n.t("common.loading") }}';
-    
-    try {
-        const response = await fetch('/api/collect', { method: 'POST' });
-        const data = await response.json();
-        alert(`{{ i18n.t("common.success") }}! Added ${data.total_new} new opportunities.`);
-        location.reload();
-    } catch (e) {
-        alert('{{ i18n.t("common.error") }}');
-    }
-    
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-sync mr-2"></i> {{ i18n.t("home.collect_data") }}';
-}
-</script>
 {% endif %}
 
 <!-- Feature Cards -->

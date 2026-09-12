@@ -17,7 +17,7 @@ from typing import Optional, Dict, List
 from collections import Counter
 from typing import Literal
 from pydantic import BaseModel, Field, ConfigDict, StrictBool
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 import os
 import datetime
 import json
@@ -40,7 +40,7 @@ from app.database import (
     get_user_by_id, update_user_last_login, save_user_profile, get_user_profile,
     record_user_behavior, save_opportunity as db_save_opportunity,
     unsave_opportunity, get_user_saved, is_opportunity_saved, get_user_saved_entry,
-    update_saved_progress,
+    update_saved_progress, import_saved_opportunity, get_saved_application,
     # Password reset
     create_password_reset_token, verify_reset_token, use_reset_token, update_user_password
 )
@@ -49,12 +49,14 @@ from app.auth import (
     destroy_session, get_current_user, validate_email, validate_username,
     validate_password, get_onboarding_options
 )
-from app.auth import require_user, require_csrf, csrf_token_for, revoke_user_sessions
+from app.auth import require_user, require_csrf, require_admin_token, csrf_token_for, revoke_user_sessions
+from app.rate_limits import enforce_rate_limit, init_rate_limit_table
 from app.recommender import recommender
 from app.i18n import I18n, LANGUAGES, DEFAULT_LANGUAGE
 from app.search_utils import (
     SOURCE_ALIASES,
     build_external_search_links,
+    canonicalize_source_url,
     detect_source_type,
     normalize_source_filter,
 )
@@ -78,7 +80,7 @@ app.include_router(resume_router)
 async def private_workspace_headers(request: Request, call_next):
     request.state.csrf_token = csrf_token_for(request)
     response = await call_next(request)
-    if request.cookies.get("session_token") or request.url.path in {"/mail", "/resume", "/api/generate-rag-draft", "/posts/mine", "/posts/new"} or request.url.path.startswith(("/api/mail", "/api/resume")) or request.url.path.endswith("/edit"):
+    if request.cookies.get("session_token") or request.url.path in {"/mail", "/resume", "/saved", "/applications", "/api/generate-rag-draft", "/posts/mine", "/posts/new"} or request.url.path.startswith(("/api/mail", "/api/resume", "/api/saved", "/api/applications", "/applications/")) or request.url.path.endswith("/edit"):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -126,7 +128,7 @@ def validated_source(source: Optional[str]) -> Optional[str]:
     return source
 
 
-SAVED_PROGRESS_STAGES = ("preparing", "contacted", "applied", "replied")
+SAVED_PROGRESS_STAGES = ("preparing", "contacted", "applied", "replied", "interviewing", "completed")
 
 
 def _safe_int(value, fallback: int) -> int:
@@ -136,11 +138,24 @@ def _safe_int(value, fallback: int) -> int:
         return fallback
 
 
-def _deadline_days_left(deadline: Optional[str]) -> Optional[int]:
-    parsed = _parse_date(deadline)
+def _calendar_date(value) -> Optional[datetime.date]:
+    parsed = _parse_date(value)
     if not parsed:
         return None
-    return (parsed.date() - datetime.datetime.utcnow().date()).days
+    text = str(value).strip()
+    if len(text) >= 10 and (len(text) == 10 or text[10] in "T "):
+        try:
+            return datetime.date.fromisoformat(text[:10])
+        except ValueError:
+            pass
+    return parsed.date()
+
+
+def _deadline_days_left(deadline: Optional[str]) -> Optional[int]:
+    deadline_date = _calendar_date(deadline)
+    if not deadline_date:
+        return None
+    return (deadline_date - datetime.datetime.utcnow().date()).days
 
 
 def _attach_saved_progress(opp: Dict, saved_item: Dict) -> None:
@@ -149,6 +164,10 @@ def _attach_saved_progress(opp: Dict, saved_item: Dict) -> None:
     opp["progress_notes"] = saved_item.get("progress_notes") or ""
     opp["reminder_days"] = _safe_int(saved_item.get("reminder_days"), 7)
     opp["progress_updated_at"] = saved_item.get("progress_updated_at")
+    opp["application_method"] = saved_item.get("application_method") or "email"
+    for field in ("next_action_at", "contacted_at", "applied_at", "replied_at", "outcome", "outcome_at",
+                  "custom_title", "custom_source_url", "custom_summary"):
+        opp[field] = saved_item.get(field)
 
     deadline_days = _deadline_days_left(opp.get("deadline", ""))
     opp["deadline_days_left"] = deadline_days
@@ -159,6 +178,77 @@ def _attach_saved_progress(opp: Dict, saved_item: Dict) -> None:
         opp["deadline_status"] = "soon"
     else:
         opp["deadline_status"] = "ok"
+
+
+def _load_applications(user_id: int, resume: Optional[Dict] = None) -> List[Dict]:
+    applications = []
+    for saved in get_user_saved(user_id):
+        item = get_saved_application(user_id, saved["opportunity_id"])
+        if not item:
+            continue
+        _attach_saved_progress(item, saved)
+        try:
+            item["hiring_signals_list"] = json.loads(item.get("hiring_signals") or "[]")
+        except (TypeError, ValueError):
+            item["hiring_signals_list"] = []
+        item["professor_email"] = item.get("contact_email") or extract_email(item.get("description", ""))
+        item["verification_fields"] = [
+            field for field in ("deadline", "stipend", "requirements") if not item.get(field)
+        ]
+        item["verification_pending"] = bool(item.get("is_external") or item["verification_fields"])
+        item["missing_resume"] = resume is None
+        try:
+            item["research_focus"] = research_agent.analyze_match("", item).get("research_focus", "")
+        except Exception:
+            item["research_focus"] = ""
+        if resume:
+            item["resume_match"] = match_resume(item, resume)
+        applications.append(item)
+    return applications
+
+
+def _application_task_reasons(application: Dict) -> List[str]:
+    if application.get("progress_stage") == "completed" or application.get("outcome"):
+        return []
+    reasons = []
+    next_action = application.get("next_action_at")
+    if next_action:
+        try:
+            parsed = datetime.datetime.fromisoformat(str(next_action).replace("Z", "+00:00"))
+            if parsed.date() <= datetime.datetime.now().date():
+                reasons.append("next_action")
+        except ValueError:
+            pass
+    deadline_days = application.get("deadline_days_left")
+    if deadline_days is not None and deadline_days <= application.get("reminder_days", 7):
+        reasons.append("deadline")
+    if application.get("is_external") and application.get("progress_stage") == "preparing":
+        reasons.append("verify_source")
+    if application.get("missing_resume") and application.get("progress_stage") == "preparing":
+        reasons.append("missing_resume")
+    return reasons
+
+
+def _group_applications(applications: List[Dict], i18n: I18n) -> tuple[List[Dict], List[Dict]]:
+    today_tasks = []
+    remaining = []
+    for item in applications:
+        item["task_reasons"] = _application_task_reasons(item)
+        (today_tasks if item["task_reasons"] else remaining).append(item)
+    definitions = [
+        ("today", "今天要处理" if i18n.is_zh() else "Due today", today_tasks),
+        ("preparing", "准备中" if i18n.is_zh() else "Preparing", []),
+        ("contacted", "已联系" if i18n.is_zh() else "Contacted", []),
+        ("applied", "已申请" if i18n.is_zh() else "Applied", []),
+        ("replied", "有回复" if i18n.is_zh() else "Replies", []),
+        ("completed", "已结束" if i18n.is_zh() else "Completed", []),
+    ]
+    groups = {key: items for key, _, items in definitions}
+    for item in remaining:
+        stage = item.get("progress_stage") or "preparing"
+        key = "replied" if stage == "interviewing" else stage
+        groups.get(key, groups["preparing"]).append(item)
+    return [{"key": key, "label": label, "applications": items} for key, label, items in definitions], today_tasks
 
 
 def _sanitize_prefill_value(value, max_length: int) -> str:
@@ -227,6 +317,7 @@ async def run_opportunity_search(
     query: str, source: Optional[str], page: int = 1, limit: int = 20,
     refresh: bool = False, live: bool = True,
     resume: Optional[Dict] = None,
+    request: Optional[Request] = None, user_id: Optional[int] = None,
 ) -> Dict:
     """Refresh, verify, rank, and finally paginate for both search entry points."""
     enabled = bool(query) and live and scraper_engine.has_live_search_credentials(query, source)
@@ -235,6 +326,10 @@ async def run_opportunity_search(
         "providers": scraper_engine.live_search_providers(query, source) if enabled else [],
         "failed_sources": [], "synced_count": 0,
     }
+    if enabled and page == 1 and request:
+        enforce_rate_limit(request, "live_search", 30, 3600, user_id)
+        if refresh:
+            enforce_rate_limit(request, "live_search_refresh", 5, 3600, user_id)
     if enabled and page == 1:
         try:
             report = await run_in_threadpool(sync_live_opportunities, query, source, refresh)
@@ -344,6 +439,7 @@ async def startup_event():
     init_mail_tables()
     init_post_tables()
     init_resume_table()
+    init_rate_limit_table()
     media_data_path = os.getenv("MEDIACRAWLER_DATA_PATH", "").strip()
     if media_data_path:
         try:
@@ -475,6 +571,7 @@ async def register_submit(
     password_confirm: str = Form(...),
 ):
     """Handle registration form submission."""
+    enforce_rate_limit(request, "register", 20, 3600)
     errors = []
     
     # Validate email
@@ -753,6 +850,7 @@ async def home(request: Request, page: int = Query(1, ge=1), feed: Literal["pers
     profile = None
     state = {"use_behavior": False, "behaviors": [], "saved": [], "hidden": []}
     recommended_searches = []
+    today_tasks = []
     
     limit = 20
     offset = (page - 1) * limit
@@ -810,6 +908,8 @@ async def home(request: Request, page: int = Query(1, ge=1), feed: Literal["pers
     
     total_pages = (total_count + limit - 1) // limit if total_count > 0 else 1
     i18n = get_i18n(request)
+    if user:
+        _, today_tasks = _group_applications(_load_applications(user["id"], resume), i18n)
     
     return templates.TemplateResponse("index.html", {
         "request": request,
@@ -821,6 +921,7 @@ async def home(request: Request, page: int = Query(1, ge=1), feed: Literal["pers
         "hidden_count": len(state["hidden"]),
         "opportunities": opportunities,
         "recommended_searches": recommended_searches,
+        "today_tasks": today_tasks[:5],
         "total_count": total_count,
         "current_page": page,
         "total_pages": total_pages,
@@ -870,7 +971,11 @@ async def search_page(
     if q or sort == "resume":
         if user and q:
             record_user_behavior(user["id"], "search", q, "search")
-        search_data = await run_opportunity_search(q, filter_source, page, limit, refresh, resume=resume if sort == "resume" else None)
+        search_data = await run_opportunity_search(
+            q, filter_source, page, limit, refresh,
+            resume=resume if sort == "resume" else None,
+            request=request, user_id=user["id"] if user else None,
+        )
         results = search_data["results"]
         total_count = search_data["total_count"]
     else:
@@ -884,6 +989,9 @@ async def search_page(
         )
 
         if not results and filter_source and page == 1 and live_search_enabled:
+            enforce_rate_limit(request, "live_search", 30, 3600, user["id"] if user else None)
+            if refresh:
+                enforce_rate_limit(request, "live_search_refresh", 5, 3600, user["id"] if user else None)
             default_q = "暑研" if filter_source in {"xiaohongshu", "wechat", "zhihu", "bilibili", "weibo", "tieba"} else "summer research"
             try:
                 await run_in_threadpool(sync_live_opportunities, default_q, filter_source, refresh)
@@ -1061,7 +1169,11 @@ async def api_search(
     resume = get_resume(require_user(request)["id"], active_only=True) if sort == "resume" else None
     if sort == "resume" and not resume:
         raise HTTPException(422, detail="请先上传并确认简历，启用个人匹配。")
-    data = await run_opportunity_search(q, filter_source, page, limit, refresh, live, resume)
+    user = get_current_user_from_request(request)
+    data = await run_opportunity_search(
+        q, filter_source, page, limit, refresh, live, resume,
+        request=request, user_id=user["id"] if user else None,
+    )
     return JSONResponse({
         "query": q, "results": data["results"], "count": len(data["results"]),
         "total": data["total_count"], "page": page,
@@ -1081,8 +1193,12 @@ class DraftRequest(BaseModel):
     focus_area: str = Field(default="", max_length=500)
     tone: Literal["professional", "enthusiastic", "concise"] = "professional"
     language: Literal["zh", "en"] = "en"
-    use_ai: bool = False
-    include_social_media: bool = False
+    use_ai: StrictBool = False
+    include_social_media: StrictBool = False
+
+
+def _mail_opportunity(user_id: int, opportunity_id: str) -> Optional[Dict]:
+    return get_opportunity_by_id(opportunity_id) or get_saved_application(user_id, opportunity_id)
 
 
 @app.get("/mail", response_class=HTMLResponse)
@@ -1091,7 +1207,7 @@ async def mail_page(request: Request, opportunity: str = Query(None, max_length=
     if not user:
         from urllib.parse import quote
         return RedirectResponse("/login?next=" + quote(str(request.url.path) + ("?" + request.url.query if request.url.query else ""), safe=""), status_code=302)
-    item = get_opportunity_by_id(opportunity) if opportunity else None
+    item = _mail_opportunity(user["id"], opportunity) if opportunity else None
     if opportunity and not item:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     if item:
@@ -1111,8 +1227,8 @@ async def mail_capabilities(request: Request):
 
 @app.get("/api/mail/context/{opportunity_id}")
 async def mail_context(opportunity_id: str, request: Request):
-    require_user(request)
-    item = get_opportunity_by_id(opportunity_id)
+    user = require_user(request)
+    item = _mail_opportunity(user["id"], opportunity_id)
     if not item:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     item["professor_email"] = item.get("contact_email") or extract_email(item.get("description", "")) or ""
@@ -1123,9 +1239,11 @@ async def mail_context(opportunity_id: str, request: Request):
 @app.post("/api/generate-rag-draft")
 async def generate_rag_draft(request: Request, payload: DraftRequest):
     user = require_csrf(request)
-    opportunity = get_opportunity_by_id(payload.opportunity_id)
+    opportunity = _mail_opportunity(user["id"], payload.opportunity_id)
     if not opportunity:
         raise HTTPException(status_code=404, detail="Opportunity not found")
+    if payload.use_ai:
+        enforce_rate_limit(request, "mail_ai", 20, 3600, user["id"])
     draft_data = await run_in_threadpool(
         rag_workbench.generate_context_aware_draft,
         {"name": payload.student_name.strip() or user["username"], "school": payload.school,
@@ -1141,12 +1259,14 @@ async def generate_rag_draft(request: Request, payload: DraftRequest):
 
 @app.post("/api/collect")
 async def trigger_collection(
-    query: str = Query(None, description="Optional specific query to collect")
+    request: Request,
+    query: str = Query(None, max_length=300, description="Optional specific query to collect")
 ):
     """
     Manually trigger a data collection job.
     Useful for testing or on-demand updates.
     """
+    require_admin_token(request)
     from app.scheduler import DataCollectionScheduler
     
     scheduler = DataCollectionScheduler()
@@ -1161,19 +1281,22 @@ async def trigger_collection(
     return JSONResponse(stats)
 
 
-@app.post("/api/analyze-match")
-async def analyze_match_api(payload: Dict = Body(...)):
-    """
-    Analyzes match using LLM.
-    """
-    query = payload.get("query", "")
-    opp_id = payload.get("opportunity_id")
+class MatchAnalysisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    query: str = Field(default="", max_length=300)
+    opportunity_id: str = Field(min_length=1, max_length=100)
 
-    opportunity = get_opportunity_by_id(opp_id)
+
+@app.post("/api/analyze-match")
+async def analyze_match_api(request: Request, payload: MatchAnalysisRequest):
+    """Return local evidence, optionally enhanced when explicitly configured."""
+    user = require_csrf(request)
+    enforce_rate_limit(request, "match_analysis", 30, 3600, user["id"])
+    opportunity = get_opportunity_by_id(payload.opportunity_id) or get_saved_application(user["id"], payload.opportunity_id)
     if not opportunity:
         raise HTTPException(status_code=404, detail="Opportunity not found")
-
-    analysis = await run_in_threadpool(research_agent.analyze_match, query, opportunity, use_llm=True)
+    use_llm = bool(os.getenv("GEMINI_API_KEY")) and os.getenv("ENABLE_MATCH_AI", "0").strip().lower() in {"1", "true", "yes", "on"}
+    analysis = await run_in_threadpool(research_agent.analyze_match, payload.query, opportunity, use_llm=use_llm)
     return JSONResponse(analysis)
 
 
@@ -1232,9 +1355,19 @@ class RecommendationFeedback(BaseModel):
 
 class SavedProgressUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    progress_stage: Optional[Literal["preparing", "contacted", "applied", "replied"]] = None
+    progress_stage: Optional[Literal["preparing", "contacted", "applied", "replied", "interviewing", "completed"]] = None
     reminder_days: Optional[int] = Field(default=None, ge=1, le=30)
     progress_notes: Optional[str] = Field(default=None, min_length=0, max_length=500)
+    application_method: Optional[Literal["email", "form", "other"]] = None
+    next_action_at: Optional[datetime.datetime] = None
+    outcome: Optional[Literal["accepted", "rejected", "withdrawn", "no_response"]] = None
+
+
+class SavedImportInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    source_url: str = Field(min_length=1, max_length=2048)
+    title: str = Field(min_length=1, max_length=300)
+    summary: str = Field(default="", max_length=3000)
 
 
 @app.post("/api/recommendations/feedback")
@@ -1259,11 +1392,35 @@ async def recommendation_feedback(request: Request, payload: RecommendationFeedb
 async def save_opportunity_api(request: Request, opportunity_id: str):
     """Save/bookmark an opportunity."""
     user = require_csrf(request)
-    if not get_opportunity_by_id(opportunity_id):
+    opportunity = get_opportunity_by_id(opportunity_id)
+    if not opportunity:
         raise HTTPException(404, "机会已不存在或尚未公开。")
-    success = is_opportunity_saved(user["id"], opportunity_id) or db_save_opportunity(user["id"], opportunity_id)
+    method = "form" if opportunity.get("direct_apply_link") or opportunity.get("has_direct_apply") else "email"
+    success = is_opportunity_saved(user["id"], opportunity_id) or db_save_opportunity(user["id"], opportunity_id, application_method=method)
 
     return JSONResponse({"success": success})
+
+
+@app.post("/api/saved/import")
+async def import_saved_opportunity_api(request: Request, payload: SavedImportInput):
+    """Save a user-supplied link privately without fetching or indexing it."""
+    user = require_csrf(request)
+    if any(ord(char) < 32 or char.isspace() or char == "\\" for char in payload.source_url):
+        raise HTTPException(422, "请填写完整、有效的 http(s) 链接。")
+    source_url = canonicalize_source_url(payload.source_url)
+    try:
+        parsed = urlsplit(source_url)
+        parsed.port
+    except ValueError:
+        raise HTTPException(422, "请填写完整、有效的 http(s) 链接。") from None
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+        raise HTTPException(422, "请填写完整、有效的 http(s) 链接。")
+    saved, created = import_saved_opportunity(user["id"], source_url, payload.title, payload.summary)
+    application = get_saved_application(user["id"], saved["opportunity_id"])
+    if not application:
+        raise HTTPException(500, "导入失败，请稍后重试。")
+    _attach_saved_progress(application, application)
+    return JSONResponse({"created": created, "application": application}, status_code=201 if created else 200)
 
 
 @app.delete("/api/save/{opportunity_id}")
@@ -1279,8 +1436,13 @@ async def update_saved_progress_api(request: Request, opportunity_id: str, paylo
     """Update progress, reminder days and notes for a saved opportunity."""
     user = require_csrf(request)
 
-    if payload.progress_stage is None and payload.reminder_days is None and payload.progress_notes is None:
+    editable = {"progress_stage", "reminder_days", "progress_notes", "application_method", "next_action_at", "outcome"}
+    changed = payload.model_fields_set & editable
+    if not changed:
         raise HTTPException(422, "请至少填写一个更新项。")
+    for required_value in ("progress_stage", "reminder_days", "progress_notes", "application_method"):
+        if required_value in changed and getattr(payload, required_value) is None:
+            raise HTTPException(422, f"{required_value} 不能为空。")
 
     saved_entry = get_user_saved_entry(user["id"], opportunity_id)
     if not saved_entry:
@@ -1290,24 +1452,32 @@ async def update_saved_progress_api(request: Request, opportunity_id: str, paylo
     if notes is not None:
         notes = notes.strip()
 
-    success = update_saved_progress(
-        user["id"],
-        opportunity_id,
-        stage=payload.progress_stage,
-        reminder_days=payload.reminder_days,
-        notes=notes,
-    )
+    updates = {
+        "stage": payload.progress_stage,
+        "reminder_days": payload.reminder_days,
+        "notes": notes,
+        "application_method": payload.application_method,
+    }
+    if "next_action_at" in changed:
+        updates["next_action_at"] = payload.next_action_at.isoformat() if payload.next_action_at else None
+    if "outcome" in changed:
+        updates["outcome"] = payload.outcome
+    success = update_saved_progress(user["id"], opportunity_id, **updates)
 
     if not success:
         raise HTTPException(500, "收藏进度保存失败，请稍后重试。")
 
     item = get_user_saved_entry(user["id"], opportunity_id)
+    application = get_saved_application(user["id"], opportunity_id)
+    if application:
+        _attach_saved_progress(application, item or saved_entry)
     return {
         "success": True,
         "opportunity_id": opportunity_id,
         "progress_stage": (item or saved_entry).get("progress_stage", "preparing"),
         "reminder_days": (item or saved_entry).get("reminder_days", 7),
         "progress_notes": (item or saved_entry).get("progress_notes", ""),
+        "application": application,
     }
 
 
@@ -1318,16 +1488,7 @@ async def get_saved_api(request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="请先登录")
     
-    saved = get_user_saved(user["id"])
-    
-    # Fetch full opportunity data
-    opportunities = []
-    for item in saved:
-        opp = get_opportunity_by_id(item["opportunity_id"])
-        if opp:
-            opp["saved_at"] = item["created_at"]
-            _attach_saved_progress(opp, item)
-            opportunities.append(opp)
+    opportunities = _load_applications(user["id"], get_resume(user["id"], active_only=True))
     
     return JSONResponse({"saved": opportunities})
 
@@ -1370,33 +1531,112 @@ async def get_profile_api(request: Request):
     return JSONResponse({"user": user, "profile": profile})
 
 
-@app.get("/saved", response_class=HTMLResponse)
-async def saved_page(request: Request):
-    """Page showing user's saved opportunities."""
+@app.get("/applications/compare", response_class=HTMLResponse)
+async def compare_applications_page(request: Request, ids: List[str] = Query(default=[])):
     user = get_current_user_from_request(request)
     if not user:
-        return RedirectResponse(url="/login?next=/saved", status_code=302)
-    
-    saved = get_user_saved(user["id"])
-    
-    # Fetch full opportunity data
-    opportunities = []
-    for item in saved:
-        opp = get_opportunity_by_id(item["opportunity_id"])
-        if opp:
-            opp["saved_at"] = item["created_at"]
-            _attach_saved_progress(opp, item)
-            try:
-                opp["hiring_signals_list"] = json.loads(opp.get("hiring_signals") or "[]")
-            except:
-                opp["hiring_signals_list"] = []
-            opportunities.append(opp)
-    
+        return RedirectResponse(url="/login?next=/applications", status_code=302)
+    normalized = [item.strip() for value in ids for item in value.split(",") if item.strip()]
+    if not 2 <= len(normalized) <= 4 or len(set(normalized)) != len(normalized) or any(len(item) > 100 for item in normalized):
+        raise HTTPException(422, "请选择 2 至 4 个不同的申请进行比较。")
+    applications = []
+    resume = get_resume(user["id"], active_only=True)
+    for opportunity_id in normalized:
+        item = get_saved_application(user["id"], opportunity_id)
+        if not item:
+            raise HTTPException(404, "申请不存在或不属于当前账号。")
+        _attach_saved_progress(item, item)
+        item["professor_email"] = item.get("contact_email") or extract_email(item.get("description", ""))
+        item["verification_fields"] = [field for field in ("deadline", "stipend", "requirements") if not item.get(field)]
+        try:
+            item["research_focus"] = research_agent.analyze_match("", item).get("research_focus", "")
+        except Exception:
+            item["research_focus"] = ""
+        if resume:
+            item["resume_match"] = match_resume(item, resume)
+        applications.append(item)
     i18n = get_i18n(request)
+    return templates.TemplateResponse("applications_compare.html", {
+        "request": request, "user": user, "applications": applications,
+        "has_resume": bool(resume), "i18n": i18n, "languages": LANGUAGES,
+    })
+
+
+def _ics_escape(value) -> str:
+    return str(value or "").replace("\\", "\\\\").replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n").replace(";", "\\;").replace(",", "\\,")
+
+
+def _ics_uri(value) -> str:
+    return "".join(character for character in str(value or "")
+                   if ord(character) >= 32 and not 127 <= ord(character) <= 159)
+
+
+def _ics_fold_line(line: str) -> str:
+    folded, current, octets = [], [], 0
+    for character in line:
+        size = len(character.encode("utf-8"))
+        if current and octets + size > 75:
+            folded.append("".join(current))
+            current, octets = [" ", character], 1 + size
+        else:
+            current.append(character)
+            octets += size
+    folded.append("".join(current))
+    return "\r\n".join(folded)
+
+
+@app.get("/api/applications/calendar.ics")
+async def applications_calendar(request: Request, opportunity_id: Optional[str] = Query(default=None, max_length=100)):
+    user = require_user(request)
+    if opportunity_id:
+        application = get_saved_application(user["id"], opportunity_id)
+        if not application:
+            raise HTTPException(404, "申请不存在或不属于当前账号。")
+        applications = [application]
+    else:
+        applications = _load_applications(user["id"])
+    generated = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Summer Research Platform//Applications//EN", "CALSCALE:GREGORIAN"]
+    for item in applications:
+        start = _calendar_date(item.get("deadline"))
+        if not start:
+            continue
+        lines.extend([
+            "BEGIN:VEVENT",
+            f"UID:{_ics_escape(item['id'])}-{user['id']}@summer-research.local",
+            f"DTSTAMP:{generated}",
+            f"DTSTART;VALUE=DATE:{start.strftime('%Y%m%d')}",
+            f"DTEND;VALUE=DATE:{(start + datetime.timedelta(days=1)).strftime('%Y%m%d')}",
+            f"SUMMARY:{_ics_escape('申请截止：' + (item.get('title') or '科研机会'))}",
+            f"DESCRIPTION:{_ics_escape((item.get('description') or '')[:500])}",
+            *([f"URL:{_ics_uri(item.get('source_url'))}"] if item.get("source_url") else []),
+            "END:VEVENT",
+        ])
+    lines.append("END:VCALENDAR")
+    return Response("\r\n".join(_ics_fold_line(line) for line in lines) + "\r\n", media_type="text/calendar; charset=utf-8", headers={
+        "Content-Disposition": 'attachment; filename="summer-applications.ics"', "Cache-Control": "no-store",
+    })
+
+
+@app.get("/saved", response_class=HTMLResponse)
+@app.get("/applications", response_class=HTMLResponse)
+async def saved_page(request: Request):
+    """Application workspace; /saved remains as a compatible entry point."""
+    user = get_current_user_from_request(request)
+    if not user:
+        next_path = "/applications" if request.url.path == "/applications" else "/saved"
+        return RedirectResponse(url=f"/login?next={next_path}", status_code=302)
+    i18n = get_i18n(request)
+    resume = get_resume(user["id"], active_only=True)
+    opportunities = _load_applications(user["id"], resume)
+    application_groups, today_tasks = _group_applications(opportunities, i18n)
     return templates.TemplateResponse("saved.html", {
         "request": request,
         "user": user,
         "opportunities": opportunities,
+        "application_groups": application_groups,
+        "today_tasks": today_tasks,
+        "has_resume": bool(resume),
         "i18n": i18n,
         "languages": LANGUAGES,
     })

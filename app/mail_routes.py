@@ -1,4 +1,5 @@
 """Authenticated, CSRF-protected mailbox and private draft endpoints."""
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Request, Query, HTTPException
@@ -7,6 +8,13 @@ from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool, StrictInt
 
 from app import auth, mail_service
+from app.database import (
+    get_opportunity_by_id,
+    get_saved_application,
+    get_user_saved_entry,
+    save_opportunity,
+    update_saved_progress,
+)
 
 
 router = APIRouter(prefix="/api/mail", tags=["mail"])
@@ -94,7 +102,22 @@ def delete(draft_id: int, request: Request):
 
 @router.post("/drafts/{draft_id}/send")
 def send(draft_id: int, request: Request, payload: SendInput):
-    return {"draft": mail_service.send_draft(_writer(request), draft_id, payload.confirm, payload.updated_at)}
+    user_id = _writer(request)
+    draft = mail_service.send_draft(user_id, draft_id, payload.confirm, payload.updated_at)
+    application = None
+    opportunity_id = draft.get("opportunity_id")
+    if draft.get("status") == "sent" and opportunity_id:
+        saved = get_user_saved_entry(user_id, opportunity_id)
+        if not saved and get_opportunity_by_id(opportunity_id):
+            save_opportunity(user_id, opportunity_id)
+            saved = get_user_saved_entry(user_id, opportunity_id)
+        if saved:
+            update_saved_progress(
+                user_id, opportunity_id, record_contact=True, application_method="email",
+                next_action_at=(datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+            )
+            application = get_saved_application(user_id, opportunity_id)
+    return {"draft": draft, "application": application}
 
 
 @router.post("/drafts/{draft_id}/attachments", status_code=201)

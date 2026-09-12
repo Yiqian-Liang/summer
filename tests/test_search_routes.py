@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 import app.database as database
@@ -90,6 +91,26 @@ class SearchRoutesTest(unittest.TestCase):
             self.assertEqual(page.context["live_search"]["status"], "error")
             self.assertIn("在线搜索暂不可用", page.text)
             self.assertEqual(len(page.context["results"]), 2)
+
+    def test_live_search_and_forced_refresh_use_persistent_limits(self):
+        report = {"results": [], "status": "fresh", "cached": False, "providers": ["Test"], "failed_sources": []}
+        with patch.object(main.scraper_engine, "has_live_search_credentials", return_value=True), \
+                patch.object(main.scraper_engine, "live_search_providers", return_value=["Test"]), \
+                patch.object(main.scraper_engine, "search_all_sources", return_value=report) as collect, \
+                patch.object(main, "enforce_rate_limit", side_effect=[None, HTTPException(429, "limited")]) as limited:
+            response = self.client.get("/api/search?q=AI&refresh=true")
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual([call.args[1] for call in limited.call_args_list], ["live_search", "live_search_refresh"])
+        collect.assert_not_called()
+
+        with patch.object(main.scraper_engine, "has_live_search_credentials", return_value=True), \
+                patch.object(main.scraper_engine, "live_search_providers", return_value=["Test"]), \
+                patch.object(main.scraper_engine, "search_all_sources", return_value=report) as collect, \
+                patch.object(main, "enforce_rate_limit", side_effect=HTTPException(429, "limited")) as limited:
+            response = self.client.get("/search?q=AI")
+        self.assertEqual(response.status_code, 429)
+        limited.assert_called_once()
+        collect.assert_not_called()
 
     def test_boundaries_and_filtered_api_total(self):
         self.seed(2)

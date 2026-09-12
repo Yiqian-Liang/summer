@@ -108,16 +108,16 @@
             </div>
             {% endif %}
 
-            <!-- AI Analysis -->
+            <!-- Explainable match analysis -->
             {% if opportunity.resume_match is defined %}{% with resume_match=opportunity.resume_match %}{% include 'resume_evidence.html' %}{% endwith %}{% endif %}
             <div class="mb-6">
                 <h3 class="text-lg font-semibold text-gray-900 mb-3">
-                    <i class="fas fa-brain text-purple-500 mr-2"></i> {{ 'AI 智能分析' if i18n.is_zh() else 'AI Analysis' }}
+                    <i class="fas fa-brain text-purple-500 mr-2"></i> {{ '方向匹配分析' if i18n.is_zh() else 'Research fit analysis' }}
                 </h3>
                 <div id="aiAnalysisBox" class="bg-purple-50 border border-purple-200 rounded-lg p-4">
                     <div id="aiAnalysisInitial">
                         <p class="text-sm text-purple-800 mb-3">
-                            {{ '输入你的研究兴趣，使用大模型深入分析该机会与你的匹配度。' if i18n.is_zh() else 'Enter your research interest to analyze the match with this opportunity.' }}
+                            {{ '输入研究兴趣，先用免费本地证据检查；管理员启用后才会使用可选 AI。' if i18n.is_zh() else 'Enter a research interest for a free evidence check. Optional AI is used only when enabled.' }}
                         </p>
                         <div class="flex gap-2 mb-3">
                             <input type="text" id="aiInterestInput" placeholder="{{ '例如：Reinforcement Learning' if i18n.is_zh() else 'e.g., Reinforcement Learning' }}"
@@ -389,7 +389,7 @@ async function runAIAnalysis() {
     try {
         const response = await fetch('/api/analyze-match', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content },
             body: JSON.stringify({
                 query: interest,
                 opportunity_id: "{{ opportunity.id }}"
@@ -397,6 +397,11 @@ async function runAIAnalysis() {
         });
 
         const data = await response.json();
+        if (response.status === 401) {
+            location.href = '/login?next=' + encodeURIComponent(location.pathname);
+            return;
+        }
+        if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Analysis failed');
 
         document.getElementById('aiAnalysisLoading').classList.add('hidden');
         document.getElementById('aiAnalysisResult').classList.remove('hidden');
@@ -410,7 +415,7 @@ async function runAIAnalysis() {
         console.error('AI Analysis failed:', e);
         document.getElementById('aiAnalysisLoading').classList.add('hidden');
         document.getElementById('aiAnalysisInitial').classList.remove('hidden');
-        alert("Analysis failed. Please try again.");
+        alert(e.message || "Analysis failed. Please try again.");
     }
 }
 

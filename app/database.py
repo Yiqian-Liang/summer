@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from app.search_ranking import rank_search_results
@@ -354,11 +354,14 @@ def get_opportunity_by_id(opp_id: str) -> Optional[Dict]:
     Retrieves a single opportunity by ID.
     """
     db = get_db()
-    rows = list(db["opportunities"].rows_where(
-        f"id = ? AND {_real_source_sql()}",
-        [opp_id],
-    ))
-    return rows[0] if rows else None
+    try:
+        rows = list(db["opportunities"].rows_where(
+            f"id = ? AND {_real_source_sql()}",
+            [opp_id],
+        ))
+        return rows[0] if rows else None
+    finally:
+        db.conn.close()
 
 
 def get_opportunity_count(source_type: Optional[str] = None, min_quality: int = 0) -> int:
@@ -442,6 +445,16 @@ def init_user_tables():
             "progress_notes": str,
             "reminder_days": int,
             "progress_updated_at": str,
+            "application_method": str,
+            "next_action_at": str,
+            "contacted_at": str,
+            "applied_at": str,
+            "replied_at": str,
+            "outcome": str,
+            "outcome_at": str,
+            "custom_title": str,
+            "custom_source_url": str,
+            "custom_summary": str,
             "created_at": str,
         }, pk="id", foreign_keys=[("user_id", "users", "id")])
         db["user_saved"].create_index(["user_id", "opportunity_id"], unique=True)
@@ -461,6 +474,28 @@ def init_user_tables():
         if "progress_updated_at" not in saved_cols:
             db["user_saved"].add_column("progress_updated_at", str)
             logger.info("Added 'progress_updated_at' to user_saved.")
+        for name, kind, default in (
+            ("application_method", str, "email"),
+            ("next_action_at", str, None),
+            ("contacted_at", str, None),
+            ("applied_at", str, None),
+            ("replied_at", str, None),
+            ("outcome", str, None),
+            ("outcome_at", str, None),
+            ("custom_title", str, None),
+            ("custom_source_url", str, None),
+            ("custom_summary", str, None),
+        ):
+            if name not in saved_cols:
+                if default is None:
+                    db["user_saved"].add_column(name, kind)
+                else:
+                    db["user_saved"].add_column(name, kind, not_null_default=default)
+                logger.info("Added '%s' to user_saved.", name)
+
+    db.execute("""CREATE UNIQUE INDEX IF NOT EXISTS user_saved_custom_url
+        ON user_saved(user_id, custom_source_url)
+        WHERE custom_source_url IS NOT NULL AND custom_source_url != ''""")
 
     db.execute("""CREATE TABLE IF NOT EXISTS recommendation_settings (
         user_id INTEGER PRIMARY KEY, use_behavior INTEGER NOT NULL DEFAULT 1
@@ -625,7 +660,7 @@ def get_user_behaviors(user_id: int, action_type: str = None, limit: int = 100) 
     return list(rows)
 
 
-def save_opportunity(user_id: int, opportunity_id: str, notes: str = "") -> bool:
+def save_opportunity(user_id: int, opportunity_id: str, notes: str = "", application_method: str = "email") -> bool:
     """Save/bookmark an opportunity for a user."""
     db = get_db()
     try:
@@ -637,12 +672,15 @@ def save_opportunity(user_id: int, opportunity_id: str, notes: str = "") -> bool
             "progress_notes": "",
             "reminder_days": 7,
             "progress_updated_at": datetime.now().isoformat(),
+            "application_method": application_method,
             "created_at": datetime.now().isoformat(),
         })
         return True
     except Exception as e:
         logger.error(f"Error saving opportunity: {e}")
         return False
+    finally:
+        db.conn.close()
 
 
 def unsave_opportunity(user_id: int, opportunity_id: str) -> bool:
@@ -662,8 +700,10 @@ def unsave_opportunity(user_id: int, opportunity_id: str) -> bool:
 def get_user_saved(user_id: int) -> List[Dict]:
     """Get all saved opportunities for a user."""
     db = get_db()
-    rows = list(db["user_saved"].rows_where("user_id = ?", [user_id], order_by="-created_at"))
-    return rows
+    try:
+        return list(db["user_saved"].rows_where("user_id = ?", [user_id], order_by="-created_at"))
+    finally:
+        db.conn.close()
 
 
 def get_user_saved_entry(user_id: int, opportunity_id: str) -> Optional[Dict]:
@@ -678,8 +718,108 @@ def get_user_saved_entry(user_id: int, opportunity_id: str) -> Optional[Dict]:
         db.conn.close()
 
 
+def import_saved_opportunity(user_id: int, source_url: str, title: str,
+                             summary: str = "") -> tuple[Dict, bool]:
+    """Create a private saved item, deduplicated by canonical source URL."""
+    source_url = canonicalize_source_url(source_url)
+    if not is_real_source_url(source_url):
+        raise ValueError("A real http(s) source URL is required")
+    opportunity_id = "import-" + hashlib.sha256(source_url.encode()).hexdigest()[:24]
+    db = get_db()
+    try:
+        with db.conn:
+            db.execute("BEGIN IMMEDIATE")
+            existing = list(db.query(
+                "SELECT * FROM user_saved WHERE user_id = ? AND custom_source_url = ? LIMIT 1",
+                [user_id, source_url],
+            ))
+            if existing:
+                return existing[0], False
+            now = datetime.now(timezone.utc).isoformat()
+            cursor = db.execute("""INSERT INTO user_saved
+                (user_id, opportunity_id, notes, progress_stage, progress_notes,
+                 reminder_days, progress_updated_at, application_method,
+                 custom_title, custom_source_url, custom_summary, created_at)
+                VALUES (?, ?, '', 'preparing', '', 7, ?, 'other', ?, ?, ?, ?)""",
+                [user_id, opportunity_id, now, title, source_url, summary, now],
+            )
+            return db["user_saved"].get(cursor.lastrowid), True
+    finally:
+        db.conn.close()
+
+
+def get_application_mail_history(user_id: int, opportunity_id: str) -> List[Dict]:
+    """Return this user's draft/sent email history for one application."""
+    db = get_db()
+    try:
+        if "outgoing_drafts" not in db.table_names():
+            return []
+        drafts = list(db.query("""SELECT id, recipient, subject, status, sender_email,
+            last_error, created_at, updated_at, sent_at
+            FROM outgoing_drafts WHERE user_id = ? AND opportunity_id = ?
+            ORDER BY updated_at DESC, id DESC""", [user_id, opportunity_id]))
+        if "mail_attachments" in db.table_names():
+            for draft in drafts:
+                draft["attachments"] = list(db.query("""SELECT id, filename, content_type, size
+                    FROM mail_attachments WHERE draft_id = ? ORDER BY id""", [draft["id"]]))
+        return drafts
+    finally:
+        db.conn.close()
+
+
+def get_saved_application(user_id: int, opportunity_id: str) -> Optional[Dict]:
+    """Resolve an owned public save or private imported application."""
+    saved = get_user_saved_entry(user_id, opportunity_id)
+    if not saved:
+        return None
+    if saved.get("custom_source_url"):
+        application = {
+            "id": saved["opportunity_id"],
+            "title": saved.get("custom_title") or "Imported opportunity",
+            "source_url": saved["custom_source_url"],
+            "source_type": "external_import",
+            "description": saved.get("custom_summary") or "",
+            "requirements": "",
+            "university": "",
+            "professor_name": "",
+            "contact_email": "",
+            "deadline": "",
+            "stipend": "",
+            "direct_apply_link": "",
+            "has_direct_apply": 0,
+            "quality_score": 0,
+            "hiring_signals": "[]",
+            "is_external": True,
+            "verification_pending": True,
+        }
+    else:
+        application = get_opportunity_by_id(opportunity_id)
+        if not application:
+            return None
+        application = dict(application)
+        application["is_external"] = False
+        application["verification_pending"] = False
+    application.update({
+        key: saved.get(key) for key in (
+            "notes", "progress_stage", "progress_notes", "reminder_days",
+            "progress_updated_at", "application_method", "next_action_at",
+            "contacted_at", "applied_at", "replied_at", "outcome", "outcome_at",
+            "custom_title", "custom_source_url", "custom_summary",
+        )
+    })
+    application["opportunity_id"] = saved["opportunity_id"]
+    application["saved_at"] = saved.get("created_at")
+    application["mail_history"] = get_application_mail_history(user_id, opportunity_id)
+    return application
+
+
+_UNSET = object()
+
+
 def update_saved_progress(user_id: int, opportunity_id: str, stage: str = None,
-                         reminder_days: int = None, notes: str = None) -> bool:
+                         reminder_days: int = None, notes: str = None,
+                         application_method: str = None, next_action_at=_UNSET,
+                         outcome=_UNSET, record_contact: bool = False) -> bool:
     """Update the progress status or reminders for a saved opportunity."""
     db = get_db()
     try:
@@ -687,13 +827,43 @@ def update_saved_progress(user_id: int, opportunity_id: str, stage: str = None,
         if not item:
             return False
 
-        updates = {"progress_updated_at": datetime.now().isoformat()}
+        now = datetime.now(timezone.utc).isoformat()
+        updates = {"progress_updated_at": now}
         if stage is not None:
             updates["progress_stage"] = stage
+            milestone = {
+                "contacted": "contacted_at", "applied": "applied_at",
+                "replied": "replied_at", "interviewing": "replied_at",
+            }.get(stage)
+            if milestone and not item.get(milestone):
+                updates[milestone] = now
+            if stage == "completed":
+                updates["next_action_at"] = None
+        if record_contact:
+            if not item.get("contacted_at"):
+                updates["contacted_at"] = now
+            if (item.get("progress_stage") or "preparing") == "preparing":
+                updates["progress_stage"] = "contacted"
         if reminder_days is not None:
             updates["reminder_days"] = reminder_days
         if notes is not None:
             updates["progress_notes"] = notes
+        if application_method is not None:
+            updates["application_method"] = application_method
+        if next_action_at is not _UNSET:
+            if not record_contact or (
+                (item.get("progress_stage") or "preparing") != "completed"
+                and not item.get("outcome") and not item.get("next_action_at")
+            ):
+                updates["next_action_at"] = next_action_at
+        if outcome is not _UNSET:
+            updates["outcome"] = outcome
+            updates["outcome_at"] = now if outcome else None
+            if outcome:
+                updates["progress_stage"] = "completed"
+                updates["next_action_at"] = None
+        if updates.get("progress_stage") == "completed":
+            updates["next_action_at"] = None
         if len(updates) == 1:
             return True
 
@@ -792,11 +962,14 @@ def update_user_password(user_id: int, password_hash: str) -> bool:
 def is_opportunity_saved(user_id: int, opportunity_id: str) -> bool:
     """Check if an opportunity is saved by user."""
     db = get_db()
-    rows = list(db["user_saved"].rows_where(
-        "user_id = ? AND opportunity_id = ?", 
-        [user_id, opportunity_id]
-    ))
-    return len(rows) > 0
+    try:
+        rows = list(db["user_saved"].rows_where(
+            "user_id = ? AND opportunity_id = ?",
+            [user_id, opportunity_id],
+        ))
+        return bool(rows)
+    finally:
+        db.conn.close()
 
 
 if __name__ == "__main__":

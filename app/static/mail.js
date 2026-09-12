@@ -68,7 +68,7 @@ function setContext(item) {
     opportunity = item;
     $('opportunityContext').classList.toggle('hidden', !item);
     $('opportunityLink').textContent = item?.title || '';
-    $('opportunityLink').href = item ? `/opportunity/${encodeURIComponent(item.id)}` : '#';
+    $('opportunityLink').href = item ? (item.is_external ? `/applications#application-${encodeURIComponent(item.id)}` : `/opportunity/${encodeURIComponent(item.id)}`) : '#';
     $('applyReminder').classList.toggle('hidden', !item?.has_direct_apply);
     $('generationNote').textContent = item ? '' : t('从项目详情进入可使用模板，也可直接在下方写信。', 'Open a project to use a template, or write directly below.');
     controls();

@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from requests import RequestException
 
-from app import auth, database, mail_service
+from app import auth, database, mail_routes, mail_service
 from app.mail_routes import router
 
 
@@ -179,6 +179,30 @@ class MailTest(unittest.TestCase):
         self.assertEqual(self.client.put(f"/api/mail/drafts/{draft['id']}", headers=self.headers, json={}).status_code, 409)
         self.smtp.return_value.send_message.assert_called_once()
 
+    def test_success_updates_linked_application_but_failure_does_not(self):
+        account = self.account().json()["account"]
+        success = self.draft(account["id"], opportunity_id="opp-1").json()["draft"]
+        application = {"id": "opp-1", "progress_stage": "contacted"}
+        with patch.object(mail_routes, "get_user_saved_entry", return_value={"id": 9}), \
+                patch.object(mail_routes, "update_saved_progress", return_value=True) as update, \
+                patch.object(mail_routes, "get_saved_application", return_value=application):
+            response = self.send(success)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["application"], application)
+        self.assertTrue(update.call_args.kwargs["record_contact"])
+        self.assertEqual(update.call_args.kwargs["application_method"], "email")
+        self.assertIn("+00:00", update.call_args.kwargs["next_action_at"])
+
+        failed = self.draft(account["id"], opportunity_id="opp-2").json()["draft"]
+        self.smtp.return_value.login.side_effect = smtplib.SMTPAuthenticationError(535, b"bad")
+        with patch.object(mail_routes, "get_user_saved_entry") as lookup, \
+                patch.object(mail_routes, "update_saved_progress") as update:
+            response = self.send(failed)
+        self.assertEqual(response.json()["draft"]["status"], "failed")
+        self.assertIsNone(response.json()["application"])
+        lookup.assert_not_called()
+        update.assert_not_called()
+
     def test_delivery_failures_distinguish_safe_retry_from_unknown_result(self):
         account = self.account().json()["account"]
         draft = self.draft(account["id"]).json()["draft"]
@@ -197,6 +221,23 @@ class MailTest(unittest.TestCase):
         self.assertEqual(self.send(unknown).status_code, 409)
         self.assertEqual(self.client.delete(f"/api/mail/drafts/{draft['id']}", headers=self.headers).status_code, 409)
         self.assertEqual(self.smtp.return_value.send_message.call_count, 2)
+
+    def test_startup_marks_interrupted_send_unknown_for_manual_verification(self):
+        draft = self.draft().json()["draft"]
+        db = database.get_db()
+        with db.conn:
+            db.execute("UPDATE outgoing_drafts SET status = 'sending' WHERE id = ?", [draft["id"]])
+        db.conn.close()
+
+        mail_service.init_mail_tables()
+
+        recovered = self.client.get(
+            f"/api/mail/drafts/{draft['id']}", headers=self.headers
+        ).json()["draft"]
+        self.assertEqual(recovered["status"], "unknown")
+        self.assertIn("真实邮箱", recovered["last_error"])
+        self.assertIn("不会自动重发", recovered["last_error"])
+        self.assertEqual(self.send(recovered).status_code, 409)
 
     def test_concurrent_send_and_disconnect_cannot_change_inflight_message(self):
         account = self.account().json()["account"]

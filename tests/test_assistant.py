@@ -34,6 +34,31 @@ class AssistantTests(unittest.TestCase):
         history = [{"action_type": "search", "target_id": "AI"}] + [{"action_type": "search", "target_id": "unrelated"}] * 20
         self.assertEqual(recommender.calculate_behavior_score({"title": "AI research"}, history), 2)
 
+    def test_match_analysis_has_a_free_evidence_fallback(self):
+        agent = ResearchAgent()
+        found = agent.analyze_match("强化学习", {"title": "Robot learning internship", "description": "Reinforcement learning for control."})
+        self.assertEqual(found["evidence_terms"], ["reinforcement learning"])
+        self.assertIn("Reinforcement learning", found["evidence"][0]["excerpt"])
+        self.assertIn("依据", found["verdict"])
+        requirements = agent.analyze_match("Python", {"title": "Research opening", "requirements": "Strong Python skills required."})
+        self.assertEqual(requirements["evidence_terms"], ["Python"])
+        missing = agent.analyze_match("quantum materials", {"title": "NLP research", "description": "Language models."})
+        self.assertEqual(missing["evidence_terms"], [])
+        self.assertNotIn("High Match", missing["verdict"])
+
+    def test_match_analysis_keeps_local_result_when_ai_fails_or_returns_empty_fields(self):
+        agent = ResearchAgent(api_key="test")
+        profile = {"title": "Robotics opening", "description": "Reinforcement learning for control."}
+        local = agent.analyze_match("强化学习", profile)
+        with patch("app.agents.requests.post", side_effect=RuntimeError("offline")):
+            failed = agent.analyze_match("强化学习", profile, use_llm=True)
+        self.assertEqual(failed, local)
+        with patch.object(agent, "_call_llm_reasoning", return_value={
+            "verdict": "", "reasoning": "", "suggested_action": "", "tags": ["untrusted"]
+        }):
+            empty = agent.analyze_match("强化学习", profile, use_llm=True)
+        self.assertEqual(empty, local)
+
 
 
 if __name__ == "__main__":

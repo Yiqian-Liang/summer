@@ -1,12 +1,12 @@
 # Global Academic Recruitment & Research Match System (全球学术招聘与研究匹配系统)
 
-An AI-driven platform for matching students with Summer Research and PhD opportunities.
-这是一个由 AI 驱动的平台，旨在为学生匹配全球暑期科研和博士申请机会。
+A research application workspace for finding, comparing and following up on Summer Research, RA and PhD opportunities.
+这是一个用于发现、比较和跟进全球暑研、RA 与博士机会的科研申请工作台。
 
 ## 🇨🇳 中文介绍 (Chinese Introduction)
 
-### 🚀 核心亮点（2026.09.07 更新）
-我们不仅仅是一个爬虫，更是一个**“全能学术助理” (Agentic Academic Assistant)**。
+### 🚀 核心亮点（2026.09.12 更新）
+平台把跨来源搜索、申请管理、简历检查、邮件与材料放在一条可追溯的工作流里。
 
 #### 1. 🌍 全球全平台数据覆盖 (Global Data Coverage)
 我们不再局限于大学官网，系统可从以下来源的公开网页索引检索信息；实际覆盖取决于已配置的搜索服务和导入数据，不代表已登录每个平台或持续后台监控：
@@ -18,12 +18,13 @@ An AI-driven platform for matching students with Summer Research and PhD opportu
 #### 2. 🧠 双语混合搜索与匹配
 *   **可解释召回**: 中英文全部查询条件必须在原文内容中命中；兼容短词边界、复数和连字符，结合招聘信号、来源可信度和发布时间排序。爬取关键词只记来源，不作为内容证据。
 *   **语义重排**: 可选使用 `paraphrase-multilingual-MiniLM-L12-v2` 对已通过规则校验的候选做轻量重排，不让低相关语义结果覆盖明确的关键词证据。
-*   **深度推理 Agent**: 系统不仅给出一个“匹配度分数”，还会生成一段 **Agent Analysis**，告诉您：“虽然该教授主要做物理，但他最近这篇关于‘量子机器学习’的论文与您的 CS 背景高度契合。”
+*   **项目匹配分析**: 默认使用本地、可回溯的文字证据，不预测录取概率。只有设置 `ENABLE_MATCH_AI=1`、配置有效密钥且用户主动请求时，才允许用 AI 补充分析。
 
 #### 3. 🛡️ 智能申请保护 (Smart Application Safety)
 *   **表单优先 (Direct Apply First)**: 自动检测 Google Forms、Typeform、Qualtrics 等申请链接。如果发现，系统会**警告**不要发邮件，而是直接填表，避免被教授拉黑。
 *   **邮件工作台**: 项目详情可进入 `/mail`，用免费中英文模板起草、编辑和私有保存。可绑定多个邮箱，核对全文后逐封确认发送。AI 起草默认关闭，只有管理员启用且用户主动选择时才调用。
 *   **社区**: `/posts` 支持科研招募、经验分享、讨论和评论。只有已发布招募进入项目搜索；草稿、下架帖和其他类型不会混入机会列表。发布者身份未经平台认证。
+*   **申请工作台**: `/applications` 汇总站内收藏与私有外部线索，支持阶段、下一步、结果、待核验项、2–4 项对比、相关邮件/附件以及截止日期日历导出。`/saved` 保留为兼容入口。
 
 ### 🛠 技术架构
 *   **后端**: Python 3.9 + FastAPI
@@ -40,6 +41,7 @@ An AI-driven platform for matching students with Summer Research and PhD opportu
 - [AI 集成策略（免费/付费边界）](docs/ai-integration.md)
 - [接口速查（邮件/社区/搜索/推荐）](docs/api-reference.md)
 - [推荐算法设计（2026-09-08）](docs/recommendation-algorithm-2026-09-08.md)
+- [产品方向与分阶段实施状态（2026-09-08）](docs/product-direction-2026-09-08.md)
 - [搜索完善检查记录（2026-09-07）](docs/search-improvements-2026-09-07.md)
 - [GitHub 搜索栈回顾（2026-07-26）](docs/github-search-stack-review-2026-07-26.md)
 
@@ -47,8 +49,8 @@ An AI-driven platform for matching students with Summer Research and PhD opportu
 
 ## 🇺🇸 English Introduction
 
-### 🚀 Key Features (Updated 2026.09.07)
-This is no longer just a scraper; it is an **Agentic Academic Assistant**.
+### 🚀 Key Features (Updated 2026.09.12)
+The platform joins cross-source search, application tracking, resume review, mail and materials in one traceable workflow.
 
 #### 1. 🌍 Global Multi-Platform Coverage
 We search public web indexes and imported records across multiple platforms. Coverage depends on configured providers; platform login and continuous background monitoring are separate workflows:
@@ -59,12 +61,13 @@ We search public web indexes and imported records across multiple platforms. Cov
 
 #### 2. 🧠 Explainable Bilingual Search
 *   **Evidence-based retrieval**: Every query concept must match source content, with bilingual aliases, token boundaries, expiry checks and deduplication. Optional multilingual MiniLM reranking adds at most five points to the verified score.
-*   **Reasoning Agent**: The system provides an **"Agent Analysis"** for each match, explaining *why* a professor is a good fit based on their recent publications.
+*   **Fit analysis**: Local, traceable text evidence is the default and never claims an admission probability. AI supplementation requires `ENABLE_MATCH_AI=1`, a valid key and an explicit user request.
 
 #### 3. 🛡️ Application Safety & Etiquette
 *   **Direct Form Detection**: Automatically detects Google Forms/Typeform links. If found, it prioritizes the form and warns the student *not* to send a cold email.
 *   **Mail workspace**: Free editable templates, private drafts, multiple optional mailboxes, and explicit review before each send. AI assistance is opt-in and disabled by default. Drafts use supplied project and student facts; response rates are not guaranteed.
 *   **Community**: Recruitment, experience sharing, discussions and comments. Only published recruitment posts enter opportunity search; author identity is not verified.
+*   **Application workspace**: `/applications` combines saved and privately imported leads with stages, next actions, outcomes, verification gaps, 2–4 item comparison, related mail/attachments and calendar export. `/saved` remains compatible.
 
 ### 📦 Installation
 
@@ -121,9 +124,21 @@ SITE_BASE_URL/mail/oauth/microsoft/callback
 
 免费模板始终可用。可选 AI 邮件设置 `ENABLE_AI_DRAFTING=1` 和有效 `GEMINI_API_KEY`；选 AI 后个人背景会发送给 Gemini。此开关仅控制邮件，已有在线搜索和匹配分析有独立调用。暂不增加订阅、付费墙或全站自动 AI 调用；有实际需求和预算再接计费与配额。
 
+公开部署还应设置 `ADMIN_API_TOKEN`；`POST /api/collect` 只接受请求头 `X-Admin-Token` 与该值一致的维护请求，未配置时接口不可用。项目匹配分析默认走本地证据规则；只有 `ENABLE_MATCH_AI=1` 且存在有效 `GEMINI_API_KEY` 时才允许可选 AI 补充。注册、发帖、评论、AI 请求和在线搜索使用 SQLite 持久化限流，强制刷新另有更低配额，重启后不会清空当前时间窗；`RATE_LIMIT_SALT` 可为匿名访问标识提供稳定的哈希盐。单机 SQLite 方案适合当前部署，多主机部署时再迁移共享限流存储。
+
 授权设置参考：[Google OAuth](https://developers.google.com/identity/protocols/oauth2/web-server)、[Gmail 发送](https://developers.google.com/workspace/gmail/api/guides/sending)、[Microsoft OAuth](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow)、[Graph 发送](https://learn.microsoft.com/en-us/graph/api/user-sendmail?view=graph-rest-1.0)。
 
 离线验证：`python3 -m unittest discover -s tests -q`。测试只使用临时数据库，并模拟 AI、SMTP 和 OAuth 请求。
+
+## 申请行动工作台
+
+登录后打开 `/applications`。原 `/saved` 地址继续可用，主入口已升级为按“今天要处理、准备中、已联系、已申请、有回复、已结束”分组的申请工作台。每张申请卡可记录申请方式、下一步时间、备注、面试阶段和最终结果，并显示相关邮件与附件历史。
+
+站外看到的机会可只用 URL、标题和可选摘要导入。平台会规范化 URL，并在同一账号内去重；该私有记录不会抓取登录态页面、不会写入公共机会表，也不会进入搜索或推荐。站外导入缺少的截止日期、资金和要求会明确显示为待核验。
+
+用户可选择 2–4 条本人申请进行并排比较，查看研究方向证据、导师/机构、申请方式、原文信息、待核验字段和当前下一步。比较页不生成录取概率或综合分。首页和申请页提供站内“今天该做什么”，依据下一步日期、截止日期及私有线索待核验状态提示；这些是页面待办，不会通过已绑定邮箱自动发送提醒。
+
+`GET /api/applications/calendar.ics` 导出本人所有有明确截止日期的申请；传 `opportunity_id` 可导出单项。无有效截止日期的记录会跳过。“今天该做什么”也会提示准备中的申请缺少当前简历。日历由用户主动下载，平台不会代替用户发送提醒邮件。
 
 ## 简历上传与个人匹配
 
@@ -133,7 +148,9 @@ SITE_BASE_URL/mail/oauth/microsoft/callback
 
 “查看匹配机会”和搜索中的“我的简历优先”按共同方向与技能数量排序，展开可查看简历和项目原文的依据。内置词支持常见中英别名，也可补充正文中出现的自定义研究术语。仅凭关键词无法判断录取概率、学位、资金、签证或时间资格，不依据姓名、年龄或学校名气评分。
 
-网页与 API 均支持 `sort=resume`，需要本人登录且已启用简历。`/api/search?sort=resume` 不发起在线搜索；有 `q` 时先应用原有查询条件，再按个人匹配排序，分页和来源筛选保持一致。私有接口为 `GET/PUT/DELETE /api/resume` 和 `POST /api/resume/parse?filename=cv.pdf`（原始文件请求体）；写操作需要登录会话的 `X-CSRF-Token`，保存须携带当前版本的 `updated_at`，首次为 `null`。
+`/resume/review` 提供免费的本地规则检查：检查教育、研究/项目、技能等基础栏目，日期格式与区间，经历要点是否包含行动、方法和可验证结果，以及重复的空泛表达。带 `opportunity_id` 时还会显示双方已有的共同证据，以及项目提到但简历中未检出的已知方向/技能，并统一标为“请核对”，不直接推断用户不会。该检查不联网、不调用 LLM，也不输出数字评分；公开机会与本人私有导入均可使用。
+
+网页与 API 均支持 `sort=resume`，需要本人登录且已启用简历。`/api/search?sort=resume` 不发起在线搜索；有 `q` 时先应用原有查询条件，再按个人匹配排序，分页和来源筛选保持一致。私有接口为 `GET/PUT/DELETE /api/resume`、`GET /api/resume/review` 和 `POST /api/resume/parse?filename=cv.pdf`（原始文件请求体）；写操作需要登录会话的 `X-CSRF-Token`，保存须携带当前版本的 `updated_at`，首次为 `null`。
 
 ## 首页推荐算法
 

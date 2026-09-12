@@ -24,8 +24,8 @@
                             <a href="/mail" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">{{ '邮件' if i18n.is_zh() else 'Mail' }}</a>
                             <a href="/resume" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">{{ '简历匹配' if i18n.is_zh() else 'Resume match' }}</a>
                             {% if user %}
-                            <a href="/saved" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">
-                                <i class="fas fa-bookmark mr-1"></i>{{ i18n.t('nav.saved') }}
+                            <a href="/applications" class="hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">
+                                <i class="fas fa-tasks mr-1"></i>{{ i18n.t('nav.saved') }}
                             </a>
                             {% endif %}
                         </div>
@@ -61,8 +61,8 @@
                             <a href="/onboarding" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                 <i class="fas fa-sliders-h mr-2"></i>{{ i18n.t('nav.settings') }}
                             </a>
-                            <a href="/saved" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                                <i class="fas fa-bookmark mr-2"></i>{{ i18n.t('nav.saved') }}
+                            <a href="/applications" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <i class="fas fa-tasks mr-2"></i>{{ i18n.t('nav.saved') }}
                             </a>
                             <hr class="my-1">
                             <a href="/logout" class="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100">
@@ -83,6 +83,7 @@
             <a href="/posts/new">{{ '发帖' if i18n.is_zh() else 'Post' }}</a>
             <a href="/mail">{{ '邮件' if i18n.is_zh() else 'Mail' }}</a>
             <a href="/resume">{{ '简历匹配' if i18n.is_zh() else 'Resume match' }}</a>
+            {% if user %}<a href="/applications">{{ i18n.t('nav.saved') }}</a>{% endif %}
         </div>
     </nav>
 
@@ -93,7 +94,7 @@
     <footer class="bg-gray-800 text-gray-300 py-6">
         <div class="max-w-7xl mx-auto px-4 text-center">
             <p>&copy; 2026 {{ i18n.t('site.name') }}. All rights reserved.</p>
-            <p class="text-sm mt-2 text-gray-400">Powered by AI & Open Data</p>
+            <p class="text-sm mt-2 text-gray-400">{{ '开放数据 · AI 可选' if i18n.is_zh() else 'Open data · Optional AI' }}</p>
         </div>
     </footer>
 </body>

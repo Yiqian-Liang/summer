@@ -18,7 +18,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
     # Navigation
     "nav.home": {"zh": "首页", "en": "Home"},
     "nav.search": {"zh": "搜索", "en": "Search"},
-    "nav.saved": {"zh": "收藏", "en": "Saved"},
+    "nav.saved": {"zh": "申请", "en": "Applications"},
     "nav.login": {"zh": "登录", "en": "Login"},
     "nav.register": {"zh": "注册", "en": "Register"},
     "nav.logout": {"zh": "退出登录", "en": "Logout"},
@@ -120,10 +120,10 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "onboarding.complete": {"zh": "完成设置，开始探索", "en": "Complete & Start Exploring"},
     
     # Saved
-    "saved.title": {"zh": "我的收藏", "en": "My Saved"},
-    "saved.count": {"zh": "你收藏了 {count} 个机会", "en": "You saved {count} opportunities"},
-    "saved.empty": {"zh": "还没有收藏", "en": "No saved items yet"},
-    "saved.empty_hint": {"zh": "浏览机会时点击收藏按钮，方便稍后查看", "en": "Click the bookmark button while browsing to save for later"},
+    "saved.title": {"zh": "我的申请", "en": "My Applications"},
+    "saved.count": {"zh": "你正在管理 {count} 个申请", "en": "You are managing {count} applications"},
+    "saved.empty": {"zh": "还没有申请项目", "en": "No applications yet"},
+    "saved.empty_hint": {"zh": "收藏搜索结果，或导入你在其他平台看到的机会", "en": "Save a search result or import an opportunity found elsewhere"},
     "saved.go_search": {"zh": "去搜索机会", "en": "Search Opportunities"},
     "saved.progress_label": {"zh": "进度", "en": "Progress"},
     "saved.progress_stage": {"zh": "进度阶段", "en": "Progress Stage"},
@@ -131,6 +131,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "saved.progress_stage_contacted": {"zh": "已联系", "en": "Contacted"},
     "saved.progress_stage_applied": {"zh": "已申请", "en": "Applied"},
     "saved.progress_stage_replied": {"zh": "已回复", "en": "Replied"},
+    "saved.progress_stage_interviewing": {"zh": "面试中", "en": "Interviewing"},
+    "saved.progress_stage_completed": {"zh": "已结束", "en": "Completed"},
     "saved.progress_stage_": {"zh": "其他", "en": "Other"},
     "saved.reminder_label": {"zh": "提醒", "en": "Reminder"},
     "saved.reminder_days_label": {"zh": "提前提醒（天）", "en": "Reminder (days)"},
@@ -141,8 +143,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "saved.deadline_soon": {"zh": "即将到期（剩余 {days} 天）", "en": "Deadline soon (in {days} days)"},
     "saved.deadline_overdue": {"zh": "已逾期 {days} 天", "en": "Overdue by {days} days"},
     "saved.view_details": {"zh": "查看详情", "en": "View Details"},
-    "saved.saved_at": {"zh": "收藏于", "en": "Saved at"},
-    "saved.unsave_confirm": {"zh": "确定要取消收藏吗？", "en": "Remove from saved?"},
+    "saved.saved_at": {"zh": "加入申请于", "en": "Added"},
+    "saved.unsave_confirm": {"zh": "确定要移除这条申请吗？", "en": "Remove this application?"},
     
     # Detail page
     "detail.back": {"zh": "返回", "en": "Back"},

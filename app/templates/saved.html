@@ -1,239 +1,229 @@
 {% extends "base.html" %}
+{% set zh = i18n.is_zh() %}
+{% set stage_names = {
+    'preparing': ('准备中' if zh else 'Preparing'),
+    'contacted': ('已联系' if zh else 'Contacted'),
+    'applied': ('已申请' if zh else 'Applied'),
+    'replied': ('有回复' if zh else 'Replied'),
+    'interviewing': ('面试中' if zh else 'Interviewing'),
+    'completed': ('已结束' if zh else 'Completed')
+} %}
+{% set method_names = {'email': ('邮件' if zh else 'Email'), 'form': ('申请表' if zh else 'Form'), 'other': ('其他' if zh else 'Other')} %}
+{% set outcome_names = {'accepted': ('已录取' if zh else 'Accepted'), 'rejected': ('未录取' if zh else 'Rejected'), 'withdrawn': ('已撤回' if zh else 'Withdrawn'), 'no_response': ('无回复' if zh else 'No response')} %}
+
+{% macro application_card(opp) -%}
+{% set application_id = opp.opportunity_id|default(opp.id, true) %}
+{% set title = opp.custom_title|default(opp.title, true)|default(('未命名外部机会' if zh else 'Untitled external opportunity'), true) %}
+{% set source_link = opp.custom_source_url|default(opp.source_url, true) %}
+{% set summary = opp.custom_summary|default(opp.description, true) %}
+{% set stage = opp.progress_stage|default('preparing', true) %}
+{% set method = opp.application_method|default(('form' if opp.direct_apply_link else 'email'), true) %}
+{% set imported = opp.is_external|default(opp.custom_source_url|default('', true), true) %}
+<article class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden" id="application-{{ application_id|urlencode }}">
+    <div class="p-5 sm:p-6">
+        <div class="flex flex-col lg:flex-row lg:items-start gap-5">
+            <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap items-center gap-2 mb-2">
+                    <label class="inline-flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                        <input type="checkbox" data-compare-id="{{ application_id }}" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        {{ '加入对比' if zh else 'Compare' }}
+                    </label>
+                    <span class="px-2 py-1 text-xs rounded-full bg-indigo-50 text-indigo-700">{{ stage_names.get(stage, stage) }}</span>
+                    {% if imported %}<span class="px-2 py-1 text-xs rounded-full bg-amber-50 text-amber-800"><i class="fas fa-lock mr-1"></i>{{ '私有导入 · 待核验' if zh else 'Private import · verify details' }}</span>{% endif %}
+                    {% if opp.outcome %}<span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-700">{{ outcome_names.get(opp.outcome, opp.outcome) }}</span>{% endif %}
+                </div>
+
+                <h3 class="text-xl font-semibold text-gray-900 break-words">{{ title }}</h3>
+                <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
+                    {% if opp.professor_name %}<span><i class="fas fa-user text-gray-400 mr-1"></i>{{ opp.professor_name }}</span>{% endif %}
+                    {% if opp.university %}<span><i class="fas fa-university text-gray-400 mr-1"></i>{{ opp.university }}</span>{% endif %}
+                    {% if opp.research_focus %}<span><i class="fas fa-flask text-gray-400 mr-1"></i>{{ opp.research_focus }}</span>{% endif %}
+                </div>
+
+                {% if summary %}<p class="mt-3 text-gray-700 line-clamp-3">{{ summary }}</p>{% endif %}
+
+                <dl class="grid sm:grid-cols-3 gap-2 mt-4 text-sm">
+                    <div class="rounded-lg bg-gray-50 p-3"><dt class="text-gray-500">{{ '截止日期' if zh else 'Deadline' }}</dt><dd class="font-medium mt-1">{{ opp.deadline or ('待核验' if zh else 'To verify') }}</dd></div>
+                    <div class="rounded-lg bg-gray-50 p-3"><dt class="text-gray-500">{{ '资金' if zh else 'Funding' }}</dt><dd class="font-medium mt-1">{{ opp.stipend or opp.funding or opp.funding_status or ('待核验' if zh else 'To verify') }}</dd></div>
+                    <div class="rounded-lg bg-gray-50 p-3"><dt class="text-gray-500">{{ '资格要求' if zh else 'Eligibility' }}</dt><dd class="font-medium mt-1 line-clamp-2">{{ opp.requirements or ('待核验' if zh else 'To verify') }}</dd></div>
+                </dl>
+
+                {% if opp.resume_match %}
+                <details class="mt-4 rounded-lg bg-indigo-50 p-3 text-sm text-indigo-900">
+                    <summary class="cursor-pointer font-medium">{{ '查看匹配依据' if zh else 'View match evidence' }} · {{ opp.resume_match.count|default(0) }} {{ '项共同内容' if zh else 'shared items' }}</summary>
+                    {% for evidence in opp.resume_match.evidence|default([]) %}<div class="mt-3"><strong>{{ evidence.keyword }}</strong><p class="mt-1">{{ '简历：' if zh else 'Resume: ' }}{{ evidence.resume_evidence }}</p><p class="mt-1">{{ '项目：' if zh else 'Posting: ' }}{{ evidence.opportunity_evidence }}</p></div>{% endfor %}
+                </details>
+                {% endif %}
+            </div>
+
+            <div class="lg:w-56 flex flex-row lg:flex-col flex-wrap gap-2 lg:items-stretch">
+                {% if source_link %}<a href="{{ source_link }}" target="_blank" rel="noopener noreferrer" class="px-3 py-2 text-sm text-center border rounded-lg text-gray-700 hover:bg-gray-50"><i class="fas fa-external-link-alt mr-1"></i>{{ '打开原文' if zh else 'Open source' }}</a>{% endif %}
+                {% if not imported %}<a href="/opportunity/{{ application_id|urlencode }}" class="px-3 py-2 text-sm text-center border rounded-lg text-gray-700 hover:bg-gray-50">{{ '项目详情' if zh else 'Details' }}</a>{% endif %}
+                <a href="/resume/review?opportunity_id={{ application_id|urlencode }}" class="px-3 py-2 text-sm text-center border border-indigo-200 rounded-lg text-indigo-700 hover:bg-indigo-50"><i class="fas fa-file-alt mr-1"></i>{{ '检查简历' if zh else 'Review resume' }}</a>
+                <a href="/mail?opportunity={{ application_id|urlencode }}" class="px-3 py-2 text-sm text-center bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"><i class="fas fa-envelope mr-1"></i>{{ '起草邮件' if zh else 'Draft email' }}</a>
+                {% if opp.direct_apply_link %}<a href="{{ opp.direct_apply_link }}" target="_blank" rel="noopener noreferrer" class="px-3 py-2 text-sm text-center bg-green-600 text-white rounded-lg hover:bg-green-700"><i class="fas fa-paper-plane mr-1"></i>{{ '打开申请表' if zh else 'Open form' }}</a>{% endif %}
+                {% if opp.deadline_days_left is not none %}<a href="/api/applications/calendar.ics?opportunity_id={{ application_id|urlencode }}" class="px-3 py-2 text-sm text-center border rounded-lg text-gray-700 hover:bg-gray-50"><i class="far fa-calendar-plus mr-1"></i>{{ '加入日历' if zh else 'Add to calendar' }}</a>{% endif %}
+            </div>
+        </div>
+
+        <form class="mt-5 border-t border-gray-100 pt-5" data-progress-form data-opportunity-id="{{ application_id }}">
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <label class="block text-sm"><span class="text-gray-600">{{ '申请阶段' if zh else 'Stage' }}</span><select name="progress_stage" class="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2">{% for value in ['preparing', 'contacted', 'applied', 'replied', 'interviewing', 'completed'] %}<option value="{{ value }}" {% if stage == value %}selected{% endif %}>{{ stage_names[value] }}</option>{% endfor %}</select></label>
+                <label class="block text-sm"><span class="text-gray-600">{{ '申请方式' if zh else 'Method' }}</span><select name="application_method" class="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2">{% for value in ['email', 'form', 'other'] %}<option value="{{ value }}" {% if method == value %}selected{% endif %}>{{ method_names[value] }}</option>{% endfor %}</select></label>
+                <label class="block text-sm lg:col-span-2"><span class="text-gray-600">{{ '下一步时间' if zh else 'Next action' }}</span><input type="datetime-local" name="next_action_at" value="{{ (opp.next_action_at|string)[:16] if opp.next_action_at else '' }}" class="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2"></label>
+                <label class="block text-sm"><span class="text-gray-600">{{ '结果' if zh else 'Outcome' }}</span><select name="outcome" class="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2"><option value="">{{ '尚无结果' if zh else 'No outcome' }}</option>{% for value in ['accepted', 'rejected', 'withdrawn', 'no_response'] %}<option value="{{ value }}" {% if opp.outcome == value %}selected{% endif %}>{{ outcome_names[value] }}</option>{% endfor %}</select></label>
+                <label class="block text-sm"><span class="text-gray-600">{{ i18n.t('saved.reminder_days_label') }}</span><input type="number" name="reminder_days" min="1" max="30" value="{{ opp.reminder_days|default(7, true) }}" class="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2"></label>
+                <label class="block text-sm sm:col-span-2 lg:col-span-4"><span class="text-gray-600">{{ '下一步与备注' if zh else 'Next step and notes' }}</span><textarea name="progress_notes" rows="2" maxlength="500" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="{{ '例如：补充成绩单；周五发送跟进邮件' if zh else 'e.g. Add transcript; send follow-up Friday' }}">{{ opp.progress_notes|default('', true) }}</textarea></label>
+            </div>
+            <div class="mt-3 flex flex-wrap items-center gap-3">
+                <button type="submit" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">{{ i18n.t('saved.progress_save') }}</button>
+                <span data-progress-feedback role="status" aria-live="polite" class="text-sm text-gray-500"></span>
+                {% if opp.saved_at %}<span class="text-xs text-gray-400 sm:ml-auto">{{ i18n.t('saved.saved_at') }} {{ (opp.saved_at|string)[:10] }}</span>{% endif %}
+            </div>
+        </form>
+
+        {% set mail_records = opp.mail_history|default([], true) %}
+        {% if mail_records %}
+        <details class="mt-4 border-t border-gray-100 pt-4">
+            <summary class="cursor-pointer text-sm font-medium text-gray-800"><i class="far fa-envelope mr-1"></i>{{ '相关邮件与附件' if zh else 'Related mail and attachments' }} ({{ mail_records|length }})</summary>
+            <ul class="mt-3 grid gap-2 sm:grid-cols-2">
+                {% for mail in mail_records %}
+                <li class="rounded-lg bg-gray-50 p-3 text-sm">
+                    {% if mail.id %}<a href="/mail?draft={{ mail.id }}" class="font-medium text-indigo-700 hover:underline">{{ mail.subject or ('未命名草稿' if zh else 'Untitled draft') }}</a>{% else %}<span class="font-medium">{{ mail.subject or ('未命名邮件' if zh else 'Untitled message') }}</span>{% endif %}
+                    <p class="text-gray-500 mt-1">{{ mail.status_label|default(mail.status, true) }}{% if mail.sent_at or mail.updated_at %} · {{ ((mail.sent_at or mail.updated_at)|string)[:16] }}{% endif %}</p>
+                    {% if mail.attachments %}<p class="text-gray-600 mt-1"><i class="fas fa-paperclip mr-1"></i>{{ mail.attachments|length }} {{ '个附件' if zh else 'attachment(s)' }}</p>{% elif mail.attachment_count %}<p class="text-gray-600 mt-1"><i class="fas fa-paperclip mr-1"></i>{{ mail.attachment_count }} {{ '个附件' if zh else 'attachment(s)' }}</p>{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </details>
+        {% endif %}
+
+        <div class="mt-4 text-right"><button type="button" data-remove-application data-opportunity-id="{{ application_id }}" class="text-sm text-red-700 hover:underline"><i class="fas fa-trash mr-1"></i>{{ '移除申请' if zh else 'Remove application' }}</button></div>
+    </div>
+</article>
+{%- endmacro %}
 
 {% block title %}{{ i18n.t('saved.title') }} - {{ i18n.t('site.name') }}{% endblock %}
 
 {% block content %}
 <div class="max-w-6xl mx-auto">
-    <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-900">
-            <i class="fas fa-bookmark text-indigo-600 mr-2"></i>
-            {{ i18n.t('saved.title') }}
-        </h1>
-        <p class="text-gray-600 mt-2">{{ i18n.t('saved.count', count=opportunities|length) }}</p>
-    </div>
-
-    {% if opportunities %}
-    <div class="grid gap-4">
-        {% for opp in opportunities %}
-        <div class="bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow overflow-hidden"
-             id="saved-{{ opp.id }}">
-            <div class="p-6">
-                <div class="flex justify-between items-start">
-                    <div class="flex-1">
-                        <div class="flex items-center space-x-2 mb-2">
-                            <!-- Source Badge -->
-                            <span class="px-2 py-1 text-xs rounded-full 
-                                {% if opp.source_type == 'scholar' %}bg-blue-100 text-blue-800
-                                {% elif opp.source_type == 'linkedin' %}bg-blue-600 text-white
-                                {% elif opp.source_type == 'xiaohongshu' %}bg-red-100 text-red-800
-                                {% elif opp.source_type == 'wechat' %}bg-green-100 text-green-800
-                                {% elif opp.source_type == 'twitter' %}bg-sky-100 text-sky-800
-                                {% elif opp.source_type == 'nsf' %}bg-purple-100 text-purple-800
-                                {% else %}bg-gray-100 text-gray-800{% endif %}">
-                                {{ opp.source_type }}
-                            </span>
-
-                            {% if opp.quality_score and opp.quality_score > 70 %}
-                            <span class="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
-                                <i class="fas fa-fire mr-1"></i>{{ i18n.t('search.high_quality') }}
-                            </span>
-                            {% endif %}
-                        </div>
-
-                        <h3 class="text-xl font-semibold text-gray-900 hover:text-indigo-600 transition">
-                            <a href="/opportunity/{{ opp.id }}">{{ (opp.title or '')|escape }}</a>
-                        </h3>
-
-                        <div class="mt-2 text-sm text-gray-600 space-y-1">
-                            {% if opp.professor_name %}
-                            <p><i class="fas fa-user text-gray-400 w-5"></i> {{ opp.professor_name }}</p>
-                            {% endif %}
-                            {% if opp.university %}
-                            <p><i class="fas fa-university text-gray-400 w-5"></i> {{ opp.university }}</p>
-                            {% endif %}
-                            {% if opp.deadline %}
-                            <p>
-                                <i class="fas fa-clock text-gray-400 w-5"></i> {{ i18n.t('detail.deadline') }}: {{ opp.deadline }}
-                                {% if opp.deadline_days_left is not none %}
-                                    {% if opp.deadline_status == 'overdue' %}
-                                    <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-50 text-red-700">{{ i18n.t('saved.deadline_overdue', days=opp.deadline_days_left|abs) }}</span>
-                                    {% elif opp.reminder_due %}
-                                    <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-amber-50 text-amber-700">{{ i18n.t('saved.deadline_soon', days=opp.deadline_days_left) }}</span>
-                                    {% endif %}
-                                {% endif %}
-                            </p>
-                            {% endif %}
-
-                            <p class="text-xs text-gray-600">
-                                <span class="font-medium">{{ i18n.t('saved.progress_label') }}</span>
-                                {{ i18n.t('saved.progress_stage_' + opp.progress_stage) }} ·
-                                {{ i18n.t('saved.reminder_label') }} {{ opp.reminder_days }} {{ i18n.t('saved.days') }}
-                            </p>
-                        </div>
-
-                        {% if opp.description %}
-                        <p class="mt-3 text-gray-700 line-clamp-2">{{ (opp.description or '')[:200] }}{% if (opp.description or '')|length > 200 %}...{% endif %}</p>
-                        {% endif %}
-
-                        <!-- Hiring Signals -->
-                        {% if opp.hiring_signals_list %}
-                        <div class="mt-3 flex flex-wrap gap-2">
-                            {% for signal in opp.hiring_signals_list[:3] %}
-                            <span class="px-2 py-1 bg-yellow-50 text-yellow-700 text-xs rounded">
-                                <i class="fas fa-star mr-1"></i>{{ signal }}
-                            </span>
-                            {% endfor %}
-                        </div>
-                        {% endif %}
-
-                        <form class="mt-4 border-t border-gray-100 pt-4" onsubmit="updateSavedProgress(event, '{{ opp.id }}')">
-                            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                                <label class="block text-sm">
-                                    <span class="text-gray-500">{{ i18n.t('saved.progress_stage') }}</span>
-                                    <select name="progress_stage" class="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2">
-                                        <option value="preparing" {% if opp.progress_stage == 'preparing' %}selected{% endif %}>{{ i18n.t('saved.progress_stage_preparing') }}</option>
-                                        <option value="contacted" {% if opp.progress_stage == 'contacted' %}selected{% endif %}>{{ i18n.t('saved.progress_stage_contacted') }}</option>
-                                        <option value="applied" {% if opp.progress_stage == 'applied' %}selected{% endif %}>{{ i18n.t('saved.progress_stage_applied') }}</option>
-                                        <option value="replied" {% if opp.progress_stage == 'replied' %}selected{% endif %}>{{ i18n.t('saved.progress_stage_replied') }}</option>
-                                    </select>
-                                </label>
-                                <label class="block text-sm">
-                                    <span class="text-gray-500">{{ i18n.t('saved.reminder_days_label') }}</span>
-                                    <input type="number" name="reminder_days" min="1" max="30" value="{{ opp.reminder_days }}" class="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2" />
-                                </label>
-                                <label class="block text-sm lg:col-span-2">
-                                    <span class="text-gray-500">{{ i18n.t('saved.progress_notes') }}</span>
-                                    <textarea name="progress_notes" rows="2" maxlength="500" class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2">{{ opp.progress_notes }}</textarea>
-                                </label>
-                            </div>
-                            <div class="mt-3 flex items-center gap-3">
-                                <button type="submit" class="px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">{{ i18n.t('saved.progress_save') }}</button>
-                                <p id="saved-feedback-{{ opp.id }}" class="text-sm text-gray-500" hidden></p>
-                            </div>
-                        </form>
-
-                        <div class="mt-3 text-xs text-gray-400">
-                            {{ i18n.t('saved.saved_at') }} {{ opp.saved_at[:10] }}
-                        </div>
-                    </div>
-
-                    <div class="flex flex-col items-end space-y-2 ml-4">
-                        {% if opp.quality_score and opp.quality_score > 80 %}
-                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                            <i class="fas fa-star text-yellow-500 mr-1"></i>{{ '优质' if i18n.is_zh() else 'Top Pick' }}
-                        </span>
-                        {% endif %}
-
-                        <!-- Action Buttons -->
-                        <div class="flex flex-wrap justify-end gap-2">
-                            {% if opp.source_url %}
-                            <a href="{{ opp.source_url }}" target="_blank"
-                               class="px-3 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">
-                                <i class="fas fa-external-link-alt mr-1"></i>{{ '原文' if i18n.is_zh() else 'Source' }}
-                            </a>
-                            {% endif %}
-                            <a href="/opportunity/{{ opp.id }}"
-                               class="px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
-                                {{ i18n.t('saved.view_details') }}
-                            </a>
-                            <button onclick="unsaveOpportunity('{{ opp.id }}')"
-                               class="px-3 py-2 text-sm border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <div class="flex flex-wrap justify-between items-start gap-4 mb-6">
+        <div><h1 class="text-3xl font-bold text-gray-900"><i class="fas fa-tasks text-indigo-600 mr-2"></i>{{ i18n.t('saved.title') }}</h1><p class="text-gray-600 mt-2">{{ i18n.t('saved.count', count=opportunities|default([])|length) }}</p></div>
+        <div class="flex flex-wrap gap-2">
+            <a href="/api/applications/calendar.ics" class="px-4 py-2 border bg-white rounded-lg text-indigo-700 hover:bg-indigo-50"><i class="far fa-calendar-alt mr-1"></i>{{ '导出截止日历' if zh else 'Export deadlines' }}</a>
+            <button id="compareApplications" type="button" disabled class="px-4 py-2 bg-indigo-600 text-white rounded-lg disabled:opacity-50"><i class="fas fa-columns mr-1"></i>{{ '对比所选' if zh else 'Compare selected' }}</button>
         </div>
-        {% endfor %}
     </div>
+    <p id="compareStatus" role="status" aria-live="polite" class="text-sm text-gray-600 mb-5">{{ '请选择 2–4 个申请进行对比' if zh else 'Select 2–4 applications to compare' }}</p>
+
+    <details class="bg-white rounded-xl border border-indigo-100 p-5 mb-8" {% if not opportunities %}open{% endif %}>
+        <summary class="cursor-pointer font-semibold text-indigo-800"><i class="fas fa-link mr-2"></i>{{ '导入其他平台看到的机会' if zh else 'Import an opportunity from another platform' }}</summary>
+        <p class="text-sm text-gray-600 mt-3">{{ '只建立你的私有申请卡，不抓取登录页面，也不会加入公共搜索。无法确认的信息会标为待核验。' if zh else 'This creates a private application card. We do not scrape signed-in pages or add it to public search. Unknown details stay marked for verification.' }}</p>
+        <form id="importApplication" class="grid md:grid-cols-2 gap-3 mt-4">
+            <label class="block text-sm"><span class="text-gray-700">{{ '原文链接' if zh else 'Source URL' }}</span><input name="source_url" type="url" maxlength="2048" required placeholder="https://..." class="mt-1 w-full border rounded-lg px-3 py-2"></label>
+            <label class="block text-sm"><span class="text-gray-700">{{ '项目标题' if zh else 'Title' }}</span><input name="title" maxlength="200" required class="mt-1 w-full border rounded-lg px-3 py-2"></label>
+            <label class="block text-sm md:col-span-2"><span class="text-gray-700">{{ '摘要（可选）' if zh else 'Summary (optional)' }}</span><textarea name="summary" rows="3" maxlength="3000" class="mt-1 w-full border rounded-lg px-3 py-2"></textarea></label>
+            <div class="md:col-span-2 flex items-center gap-3"><button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-lg disabled:opacity-50">{{ '加入我的申请' if zh else 'Add to applications' }}</button><span id="importStatus" role="status" aria-live="polite" class="text-sm text-gray-600"></span></div>
+        </form>
+    </details>
+
+    {% if opportunities and application_groups %}
+    <div class="space-y-8">
+        {% for group in application_groups %}{% if group.applications %}
+        <section aria-labelledby="group-{{ group.key|urlencode }}">
+            <div class="flex items-center gap-2 mb-3"><h2 id="group-{{ group.key|urlencode }}" class="text-xl font-bold text-gray-900">{{ group.label }}</h2><span class="px-2 py-0.5 rounded-full bg-gray-200 text-gray-700 text-xs">{{ group.applications|length }}</span></div>
+            <div class="grid gap-4">{% for opp in group.applications %}{{ application_card(opp) }}{% endfor %}</div>
+        </section>
+        {% endif %}{% endfor %}
+    </div>
+    {% elif opportunities %}
+    <section aria-labelledby="allApplicationsTitle"><h2 id="allApplicationsTitle" class="sr-only">{{ '全部申请' if zh else 'All applications' }}</h2><div class="grid gap-4">{% for opp in opportunities %}{{ application_card(opp) }}{% endfor %}</div></section>
     {% else %}
-    <div class="text-center py-16 bg-white rounded-xl shadow-md">
-        <i class="fas fa-bookmark text-6xl text-gray-300 mb-4"></i>
-        <h3 class="text-xl font-medium text-gray-600">{{ i18n.t('saved.empty') }}</h3>
-        <p class="text-gray-500 mt-2">{{ i18n.t('saved.empty_hint') }}</p>
-        <a href="/search" class="inline-block mt-4 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
-            {{ i18n.t('saved.go_search') }}
-        </a>
-    </div>
+    <div class="text-center py-12 bg-white rounded-xl border"><i class="fas fa-tasks text-5xl text-gray-300 mb-4"></i><h2 class="text-xl font-medium text-gray-700">{{ i18n.t('saved.empty') }}</h2><p class="text-gray-500 mt-2">{{ i18n.t('saved.empty_hint') }}</p><a href="/search" class="inline-block mt-4 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">{{ i18n.t('saved.go_search') }}</a></div>
     {% endif %}
 </div>
 
 <script>
-async function updateSavedProgress(event, oppId) {
-    event.preventDefault();
-    const form = event.target.closest('form');
-    const feedback = document.getElementById(`saved-feedback-${oppId}`);
-    const submitBtn = form.querySelector('button[type="submit"]');
-    submitBtn.disabled = true;
-    if (feedback) {
-        feedback.hidden = false;
-        feedback.textContent = '{{ i18n.t("common.loading") }}';
-        feedback.classList.remove('text-red-700', 'text-green-700');
-        feedback.classList.add('text-gray-500');
-    }
+(() => {
+    const zh = {{ zh|tojson }};
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    const message = (cn, en) => zh ? cn : en;
+    const errorText = data => Array.isArray(data.detail) ? data.detail.map(item => item.msg || String(item)).join('; ') : data.detail || message('请求失败，请稍后重试。', 'Request failed. Please try again.');
 
-    try {
-        const response = await fetch(`/api/saved/${encodeURIComponent(oppId)}/progress`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
-            },
-            body: JSON.stringify({
-                progress_stage: form.querySelector('[name="progress_stage"]').value,
-                reminder_days: Number(form.querySelector('[name="reminder_days"]').value || 7),
-                progress_notes: form.querySelector('[name="progress_notes"]').value,
-            }),
-        });
+    document.querySelectorAll('[data-progress-form]').forEach(form => form.addEventListener('submit', async event => {
+        event.preventDefault();
+        const button = form.querySelector('button[type="submit"]');
+        const feedback = form.querySelector('[data-progress-feedback]');
+        const field = name => form.elements.namedItem(name);
+        button.disabled = true;
+        feedback.className = 'text-sm text-gray-500';
+        feedback.textContent = message('正在保存…', 'Saving…');
+        try {
+            const response = await fetch(`/api/saved/${encodeURIComponent(form.dataset.opportunityId)}/progress`, {
+                method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf},
+                body: JSON.stringify({progress_stage: field('progress_stage').value, application_method: field('application_method').value, next_action_at: field('next_action_at').value || null, outcome: field('outcome').value || null, reminder_days: Number(field('reminder_days').value || 7), progress_notes: field('progress_notes').value}),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(errorText(data));
+            feedback.className = 'text-sm text-green-700';
+            feedback.textContent = message('申请进度已保存。', 'Application progress saved.');
+            window.setTimeout(() => window.location.reload(), 700);
+        } catch (error) {
+            feedback.className = 'text-sm text-red-700';
+            feedback.textContent = error.message;
+        } finally { button.disabled = false; }
+    }));
 
-        if (!response.ok) {
-            const result = await response.json();
-            throw new Error(Array.isArray(result.detail) ? result.detail.map(item => item.msg).join('\n') : result.detail || '{{ i18n.t("common.error") }}');
+    const importForm = document.getElementById('importApplication');
+    importForm?.addEventListener('submit', async event => {
+        event.preventDefault();
+        const button = importForm.querySelector('button[type="submit"]');
+        const status = document.getElementById('importStatus');
+        const values = new FormData(importForm);
+        button.disabled = true;
+        status.className = 'text-sm text-gray-600';
+        status.textContent = message('正在加入…', 'Adding…');
+        try {
+            const response = await fetch('/api/saved/import', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf}, body: JSON.stringify({source_url: values.get('source_url'), title: values.get('title'), summary: values.get('summary')})});
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(errorText(data));
+            status.className = 'text-sm text-green-700';
+            status.textContent = data.created ? message('已加入你的申请。', 'Added to your applications.') : message('这个链接已在你的申请中。', 'This link is already in your applications.');
+            window.setTimeout(() => window.location.assign('/applications'), 600);
+        } catch (error) {
+            status.className = 'text-sm text-red-700'; status.textContent = error.message; button.disabled = false;
         }
+    });
 
-        if (feedback) {
-            feedback.textContent = '{{ i18n.t("saved.progress_saved") }}';
-            feedback.classList.remove('text-gray-500', 'text-red-700');
-            feedback.classList.add('text-green-700');
+    const compareButton = document.getElementById('compareApplications');
+    const compareStatus = document.getElementById('compareStatus');
+    const compareBoxes = [...document.querySelectorAll('[data-compare-id]')];
+    const selected = () => compareBoxes.filter(box => box.checked);
+    const updateCompare = changed => {
+        if (selected().length > 4 && changed) changed.checked = false;
+        const count = selected().length;
+        compareButton.disabled = count < 2 || count > 4;
+        compareStatus.textContent = count ? message(`已选择 ${count} 个；请选择 2–4 个。`, `${count} selected; choose 2–4.`) : message('请选择 2–4 个申请进行对比', 'Select 2–4 applications to compare');
+    };
+    compareBoxes.forEach(box => box.addEventListener('change', () => updateCompare(box)));
+    compareButton?.addEventListener('click', () => {
+        const ids = selected().map(box => box.dataset.compareId);
+        if (ids.length >= 2 && ids.length <= 4) window.location.assign(`/applications/compare?ids=${encodeURIComponent(ids.join(','))}`);
+    });
+
+    document.querySelectorAll('[data-remove-application]').forEach(button => button.addEventListener('click', async () => {
+        if (!window.confirm(message('确定要移除这条申请吗？相关邮件草稿会保留。', 'Remove this application? Related mail drafts will remain.'))) return;
+        button.disabled = true;
+        try {
+            const response = await fetch(`/api/save/${encodeURIComponent(button.dataset.opportunityId)}`, {method: 'DELETE', headers: {'X-CSRF-Token': csrf}});
+            if (!response.ok) throw new Error();
+            document.getElementById(`application-${encodeURIComponent(button.dataset.opportunityId)}`)?.remove();
+            window.setTimeout(() => window.location.reload(), 250);
+        } catch {
+            button.disabled = false;
+            window.alert(message('移除失败，请稍后重试。', 'Could not remove the application. Please try again.'));
         }
-    } catch (error) {
-        if (feedback) {
-            feedback.textContent = error.message || '{{ i18n.t("common.error") }}';
-            feedback.classList.remove('text-gray-500', 'text-green-700');
-            feedback.classList.add('text-red-700');
-        }
-    } finally {
-        submitBtn.disabled = false;
-    }
-}
-
-async function unsaveOpportunity(oppId) {
-    if (!confirm('{{ i18n.t("saved.unsave_confirm") }}')) return;
-
-    try {
-        const response = await fetch(`/api/save/${encodeURIComponent(oppId)}`, {
-            method: 'DELETE',
-            headers: {'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content},
-        });
-
-        if (response.ok) {
-            // Remove from page with animation
-            const element = document.getElementById(`saved-${oppId}`);
-            element.style.transition = 'all 0.3s';
-            element.style.opacity = '0';
-            element.style.transform = 'translateX(20px)';
-            setTimeout(() => {
-                element.remove();
-                // Check if no more items
-                if (document.querySelectorAll('[id^="saved-"]').length === 0) {
-                    location.reload();
-                }
-            }, 300);
-        }
-    } catch (e) {
-        alert('{{ i18n.t("common.error") }}');
-    }
-}
+    }));
+})();
 </script>
 {% endblock %}

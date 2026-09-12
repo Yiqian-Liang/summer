@@ -16,7 +16,7 @@
     <div class="min-w-0 space-y-5">
         <section class="bg-white rounded-xl border p-5">
             <div id="opportunityContext" class="mb-4 bg-indigo-50 rounded-lg p-3 {% if not opportunity %}hidden{% endif %}">
-                <a id="opportunityLink" class="font-medium text-indigo-800" href="{% if opportunity %}/opportunity/{{ opportunity.id|urlencode }}{% endif %}">{{ opportunity.title if opportunity else '' }}</a>
+                <a id="opportunityLink" class="font-medium text-indigo-800" href="{% if opportunity and opportunity.is_external %}/applications#application-{{ opportunity.id|urlencode }}{% elif opportunity %}/opportunity/{{ opportunity.id|urlencode }}{% endif %}">{{ opportunity.title if opportunity else '' }}</a>
                 <p id="applyReminder" class="text-sm text-amber-800 mt-1 {% if not opportunity or not opportunity.has_direct_apply %}hidden{% endif %}">{{ '项目已有申请入口，请优先按原文要求申请；邮件适用于确有必要的询问。' if zh else 'An application link is available. Follow the original instructions; email only when appropriate.' }}</p>
             </div>
             <details id="draftOptions" open>

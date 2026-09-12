@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% set zh = i18n.is_zh() %}
+{% block title %}{{ '简历检查' if zh else 'Resume review' }} · {{ i18n.t('site.name') }}{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6">
+    <div class="flex flex-wrap justify-between gap-3 items-start">
+        <div>
+            <h1 class="text-2xl font-bold">{{ '简历检查' if zh else 'Resume review' }}</h1>
+            <p class="text-gray-600 mt-2">{{ '用本地规则检查结构、日期和经历表述，并展示可回溯的文字依据。' if zh else 'Use local rules to check structure, dates and experience bullets with traceable text evidence.' }}</p>
+        </div>
+        <a href="/resume" class="rounded-md border bg-white px-4 py-2 text-indigo-700">{{ '编辑简历' if zh else 'Edit resume' }}</a>
+    </div>
+
+    <p class="bg-indigo-50 text-indigo-900 p-4 rounded-lg text-sm">{{ '检查完全在本站本地完成，不调用 AI、不联网，也不提供录取概率或分数。所有“请核对”都只是文字检查线索。' if zh else 'This review runs locally without AI or network calls and provides no admission probability or score. Every “Review” item is only a text-checking prompt.' }}</p>
+
+    {% if not resume %}
+    <section class="bg-white border rounded-xl p-6 text-center">
+        <h2 class="font-semibold text-lg">{{ '还没有已保存的简历' if zh else 'No saved resume yet' }}</h2>
+        <p class="text-gray-600 mt-2">{{ '先上传或粘贴简历并确认保存，再回来检查。' if zh else 'Upload or paste your resume and confirm it before reviewing.' }}</p>
+        <a href="/resume" class="inline-block mt-4 rounded-md bg-indigo-600 text-white px-4 py-2">{{ '添加简历' if zh else 'Add resume' }}</a>
+    </section>
+    {% else %}
+    <p class="text-sm text-gray-500 break-all">{{ resume.filename }} · {{ resume.updated_at }}</p>
+
+    {% if review.opportunity %}
+    <section class="bg-white border rounded-xl p-5 space-y-4">
+        <div class="flex flex-wrap justify-between gap-3">
+            <div>
+                <p class="text-xs uppercase tracking-wide text-indigo-600">{{ '针对这个机会' if zh else 'For this opportunity' }}</p>
+                <h2 class="font-semibold text-lg mt-1">{{ review.opportunity.title }}</h2>
+                {% if review.opportunity.university or review.opportunity.professor_name %}<p class="text-sm text-gray-600">{{ review.opportunity.university }}{% if review.opportunity.university and review.opportunity.professor_name %} · {% endif %}{{ review.opportunity.professor_name }}</p>{% endif %}
+            </div>
+            {% if review.opportunity.source_url %}<a href="{{ review.opportunity.source_url }}" target="_blank" rel="noopener noreferrer" class="text-indigo-700 underline">{{ '核对原文' if zh else 'Check source' }}</a>{% endif %}
+        </div>
+        {% if review.opportunity.matched_evidence %}
+        <div>
+            <h3 class="font-medium text-green-800">{{ '简历和项目都有依据' if zh else 'Evidence in both resume and posting' }}</h3>
+            <div class="mt-2 space-y-3">
+                {% for item in review.opportunity.matched_evidence %}
+                <div class="rounded-lg bg-green-50 p-3 text-sm"><strong>{{ item.keyword }}</strong><p class="mt-1">{{ '简历：' if zh else 'Resume: ' }}{{ item.resume_evidence }}</p><p class="mt-1">{{ '项目：' if zh else 'Posting: ' }}{{ item.opportunity_evidence }}</p></div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        <div>
+            <h3 class="font-medium text-amber-900">{{ '项目提到、简历中未检出' if zh else 'Mentioned in posting, not detected in resume' }}</h3>
+            <p class="text-sm text-gray-600 mt-1">{{ '这不代表你不会；请核对是否有真实经历但表述遗漏。' if zh else 'This does not mean you lack the skill; review whether a true experience is missing from the wording.' }}</p>
+            {% if review.opportunity.missing_terms_for_review %}
+            <div class="mt-2 space-y-2">
+                {% for item in review.opportunity.missing_terms_for_review %}
+                <div class="rounded-lg bg-amber-50 p-3 text-sm"><span class="font-medium text-amber-900">{{ item.label_zh if zh else item.label_en }} · {{ item.keyword }}</span><p class="mt-1">{{ item.opportunity_evidence }}</p></div>
+                {% endfor %}
+            </div>
+            {% else %}<p class="text-sm text-green-700 mt-2">{{ '没有发现需要额外核对的已知方向或技能词。' if zh else 'No additional known topic or skill terms need review.' }}</p>{% endif %}
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="bg-white border rounded-xl p-5">
+        <h2 class="font-semibold text-lg">{{ '修改清单' if zh else 'Revision checklist' }}</h2>
+        {% if review.recommendations %}
+        <ul class="mt-3 space-y-2 list-disc pl-5 text-gray-800">
+            {% for item in review.recommendations %}<li>{{ item.message_zh if zh else item.message_en }}{% if item.evidence %}<span class="block text-sm text-gray-500 mt-1">{{ item.evidence }}</span>{% endif %}</li>{% endfor %}
+        </ul>
+        {% else %}<p class="text-green-700 mt-2">{{ '当前规则未发现需要修改的项目，请继续人工核对事实和格式。' if zh else 'The current rules found no revision item. Continue checking facts and formatting manually.' }}</p>{% endif %}
+    </section>
+
+    <section class="grid md:grid-cols-2 gap-5">
+        <div class="bg-white border rounded-xl p-5">
+            <h2 class="font-semibold text-lg">{{ '基础栏目' if zh else 'Core sections' }}</h2>
+            <div class="mt-3 space-y-3">
+                {% for section in review.sections %}
+                <div class="rounded-lg border p-3"><span class="font-medium">{{ section.label_zh if zh else section.label_en }}</span><span class="ml-2 text-sm {{ 'text-green-700' if section.status == 'found' else 'text-amber-800' }}">{{ ('已找到' if zh else 'Found') if section.status == 'found' else ('请核对' if zh else 'Review') }}</span>{% if section.evidence %}<p class="text-sm text-gray-600 mt-1">{{ section.evidence }}</p>{% endif %}</div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="bg-white border rounded-xl p-5">
+            <h2 class="font-semibold text-lg">{{ '日期一致性' if zh else 'Date consistency' }}</h2>
+            <p class="mt-2 {{ 'text-green-700' if review.date_consistency.status == 'consistent' else 'text-amber-800' }}">{{ ('格式一致' if zh else 'Consistent') if review.date_consistency.status == 'consistent' else ('请核对' if zh else 'Review') }}</p>
+            {% if review.date_consistency.evidence %}<p class="text-sm text-gray-600 mt-2">{{ review.date_consistency.evidence|join(' · ') }}</p>{% endif %}
+            {% for item in review.date_consistency.issues %}<p class="text-sm mt-2">{{ item.message_zh if zh else item.message_en }}{% if item.evidence %} <span class="text-gray-500">{{ item.evidence }}</span>{% endif %}</p>{% endfor %}
+        </div>
+    </section>
+
+    <section class="bg-white border rounded-xl p-5">
+        <h2 class="font-semibold text-lg">{{ '经历要点：行动、方法、结果' if zh else 'Experience bullets: action, method, result' }}</h2>
+        {% if review.experience_bullets['items'] %}
+        <div class="mt-3 space-y-3">
+            {% for item in review.experience_bullets['items'] %}
+            <div class="rounded-lg border p-3 text-sm">
+                <p class="font-medium">{{ item.text }}</p>
+                <div class="flex flex-wrap gap-2 mt-2">
+                    <span class="rounded-full px-2 py-1 {{ 'bg-green-50 text-green-800' if item.action_evidence else 'bg-amber-50 text-amber-900' }}">{{ '行动' if zh else 'Action' }}: {{ item.action_evidence or ('请核对' if zh else 'Review') }}</span>
+                    <span class="rounded-full px-2 py-1 {{ 'bg-green-50 text-green-800' if item.method_evidence else 'bg-amber-50 text-amber-900' }}">{{ '方法' if zh else 'Method' }}: {{ item.method_evidence|join(', ') if item.method_evidence else ('请核对' if zh else 'Review') }}</span>
+                    <span class="rounded-full px-2 py-1 {{ 'bg-green-50 text-green-800' if item.result_evidence else 'bg-amber-50 text-amber-900' }}">{{ '结果' if zh else 'Result' }}: {{ item.result_evidence or ('请核对' if zh else 'Review') }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}<p class="text-amber-800 mt-2">{{ '未识别到清晰的经历要点。' if zh else 'No clear experience bullets were detected.' }}</p>{% endif %}
+    </section>
+
+    {% if review.vague_phrases %}
+    <section class="bg-white border rounded-xl p-5">
+        <h2 class="font-semibold text-lg">{{ '重复的空泛表达' if zh else 'Repeated vague phrases' }}</h2>
+        <div class="flex flex-wrap gap-2 mt-3">{% for item in review.vague_phrases %}<span class="rounded-full bg-amber-50 text-amber-900 px-3 py-1 text-sm">{{ item.phrase }} × {{ item.count }}</span>{% endfor %}</div>
+    </section>
+    {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

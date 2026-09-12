@@ -83,6 +83,14 @@ def init_mail_tables():
             updated_at TEXT NOT NULL, sent_at TEXT
         )""")
         db.execute("CREATE INDEX IF NOT EXISTS outgoing_drafts_owner ON outgoing_drafts(user_id, updated_at)")
+        db.execute("""UPDATE outgoing_drafts
+            SET status = 'unknown',
+                last_error = ?,
+                updated_at = ?
+            WHERE status = 'sending'""", [
+                "上次发送过程中服务中断，发送结果未知。请前往真实邮箱的已发送文件夹核验；系统不会自动重发。",
+                _now(),
+            ])
         db.execute("""CREATE TABLE IF NOT EXISTS mail_attachments (
             id INTEGER PRIMARY KEY, draft_id INTEGER NOT NULL,
             filename TEXT NOT NULL, content_type TEXT NOT NULL,

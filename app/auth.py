@@ -7,6 +7,7 @@ import hashlib
 import secrets
 import logging
 import hmac
+import os
 from typing import Optional, Dict
 from datetime import datetime, timedelta
 from fastapi import HTTPException, Request
@@ -107,6 +108,16 @@ def require_csrf(request: Request) -> Dict:
     if not token or not hmac.compare_digest(token, csrf_token_for(request)):
         raise HTTPException(status_code=403, detail="页面已过期，请刷新后重试 / Refresh this page and retry")
     return user
+
+
+def require_admin_token(request: Request):
+    """Protect maintenance endpoints without inventing an admin account model."""
+    expected = os.getenv("ADMIN_API_TOKEN", "")
+    if not expected:
+        raise HTTPException(503, "管理员采集接口尚未配置。")
+    supplied = request.headers.get("X-Admin-Token", "")
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(403, "管理员凭据无效。")
 
 
 def revoke_user_sessions(user_id: int):
