@@ -2,6 +2,8 @@
 
 仓库使用 Docker 和 `render.yaml` 部署到 Render 新加坡区域。服务固定为一个进程和一个实例，SQLite 位于 `/data/summer.db`，`/data` 挂载 1 GB 持久磁盘。GitHub Actions 通过离线测试和容器健康检查后，Render 才自动发布对应提交。
 
+当前只提交了部署配置，没有创建或连接 Render 资源，因此不会产生云平台费用。需要正式上线时，再由仓库所有者按下文步骤确认价格并创建 Blueprint。
+
 ## 费用与边界
 
 - Render `0.5c-512mb` Web Service：当前为 7 美元/月。
