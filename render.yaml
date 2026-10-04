@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+
+previews:
+  generation: "off"
+
+services:
+  - type: web
+    name: summer-research-platform
+    runtime: docker
+    branch: main
+    region: singapore
+    plan: 0.5c-512mb
+    numInstances: 1
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    maxShutdownDelaySeconds: 30
+    disk:
+      name: summer-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: SUMMER_DB_PATH
+        value: /data/summer.db
+      - key: SITE_BASE_URL
+        fromService:
+          type: web
+          name: summer-research-platform
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: MAIL_ENCRYPTION_KEY
+        generateValue: true
+      - key: ADMIN_API_TOKEN
+        generateValue: true
+      - key: RATE_LIMIT_SALT
+        generateValue: true
+      - key: ENABLE_AI_DRAFTING
+        value: "0"
+      - key: ENABLE_MATCH_AI
+        value: "0"
+      - key: ENABLE_DEV_PASSWORD_RESET
+        value: "0"
+      - key: DISABLE_SEMANTIC_SEARCH
+        value: "1"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SERPAPI_KEY
+        sync: false

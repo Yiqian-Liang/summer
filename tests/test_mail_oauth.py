@@ -95,6 +95,8 @@ class MailOAuthTests(unittest.TestCase):
                 self.assertFalse(mail_oauth.oauth_capabilities()["providers"][0]["available"])
         with patch.dict(os.environ, {"SITE_BASE_URL": "https://summer.example.edu"}):
             self.assertEqual(self.start()["redirect_uri"], ["https://summer.example.edu/mail/oauth/google/callback"])
+        with patch.dict(os.environ, {"SITE_BASE_URL": "", "RENDER_EXTERNAL_URL": "https://summer-alpha.onrender.com"}):
+            self.assertEqual(self.start()["redirect_uri"], ["https://summer-alpha.onrender.com/mail/oauth/google/callback"])
 
     def test_start_requires_login_csrf_and_uses_pkce_minimal_scopes(self):
         self.assertEqual(self.client.post("/api/mail/oauth/google/start").status_code, 403)

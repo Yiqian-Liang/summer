@@ -76,6 +76,22 @@ app.include_router(posts_router)
 app.include_router(resume_router)
 
 
+@app.get("/healthz", include_in_schema=False)
+async def healthcheck():
+    """Report whether the web process can reach its persistent SQLite database."""
+    connection = None
+    try:
+        connection = get_db().conn
+        connection.execute("SELECT 1").fetchone()
+    except Exception:
+        logger.exception("Health check could not reach the database")
+        return JSONResponse(status_code=503, content={"status": "unavailable"})
+    finally:
+        if connection is not None:
+            connection.close()
+    return {"status": "ok"}
+
+
 @app.middleware("http")
 async def private_workspace_headers(request: Request, call_next):
     request.state.csrf_token = csrf_token_for(request)

@@ -27,8 +27,8 @@ A research application workspace for finding, comparing and following up on Summ
 *   **申请工作台**: `/applications` 汇总站内收藏与私有外部线索，支持阶段、下一步、结果、待核验项、2–4 项对比、相关邮件/附件以及截止日期日历导出。`/saved` 保留为兼容入口。
 
 ### 🛠 技术架构
-*   **后端**: Python 3.9 + FastAPI
-*   **AI 模型**: Sentence-Transformers (Multilingual MiniLM) + 可解释混合排序
+*   **后端**: Python 3.11 + FastAPI
+*   **排序**: 默认使用可解释混合排序；Sentence-Transformers (Multilingual MiniLM) 为可选增强
 *   **数据采集**: SerpApi + Gemini Grounding + MediaCrawler 导入 + BeautifulSoup
 *   **数据库**: SQLite (内置向量存储与 Agent 分析记录)
 
@@ -44,6 +44,7 @@ A research application workspace for finding, comparing and following up on Summ
 - [产品方向与分阶段实施状态（2026-09-08）](docs/product-direction-2026-09-08.md)
 - [搜索完善检查记录（2026-09-07）](docs/search-improvements-2026-09-07.md)
 - [GitHub 搜索栈回顾（2026-07-26）](docs/github-search-stack-review-2026-07-26.md)
+- [邀请制 Alpha 部署（Docker / GitHub Actions / Render）](docs/deployment.md)
 
 ---
 
@@ -88,6 +89,12 @@ We search public web indexes and imported records across multiple platforms. Cov
     pip install -r requirements.txt
     ```
 
+    需要本地语义重排时再安装可选模型依赖：
+
+    ```bash
+    pip install -r requirements-semantic.txt
+    ```
+
 ## 🏃‍♂️ Running the App
 
 Start the server with hot-reload enabled:
@@ -129,6 +136,10 @@ SITE_BASE_URL/mail/oauth/microsoft/callback
 授权设置参考：[Google OAuth](https://developers.google.com/identity/protocols/oauth2/web-server)、[Gmail 发送](https://developers.google.com/workspace/gmail/api/guides/sending)、[Microsoft OAuth](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow)、[Graph 发送](https://learn.microsoft.com/en-us/graph/api/user-sendmail?view=graph-rest-1.0)。
 
 离线验证：`python3 -m unittest discover -s tests -q`。测试只使用临时数据库，并模拟 AI、SMTP 和 OAuth 请求。
+
+## 部署
+
+仓库包含生产 Docker 镜像、GitHub Actions 自动测试和 Render Blueprint。邀请制 Alpha 的部署、费用、持久磁盘、邮箱配置、回滚与上线检查见 [部署说明](docs/deployment.md)。Render 免费实例会丢失本地 SQLite，真实账号必须使用带持久磁盘的单实例服务。
 
 ## 申请行动工作台
 

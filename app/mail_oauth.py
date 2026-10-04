@@ -70,7 +70,7 @@ def _configuration(provider):
     client_secret = os.getenv(f"{prefix}_CLIENT_SECRET", "").strip()
     if not client_id or not client_secret:
         raise HTTPException(503, f"管理员尚未配置 {prefix}_CLIENT_ID 和 {prefix}_CLIENT_SECRET。")
-    base = os.getenv("SITE_BASE_URL", "http://localhost:8000").strip().rstrip("/")
+    base = (os.getenv("SITE_BASE_URL") or os.getenv("RENDER_EXTERNAL_URL") or "http://localhost:8000").strip().rstrip("/")
     try:
         parsed = urlsplit(base)
         valid_scheme = parsed.scheme == "https" or (parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1", "::1"})
