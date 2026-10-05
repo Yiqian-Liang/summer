@@ -3,9 +3,41 @@
 A research application workspace for finding, comparing and following up on Summer Research, RA and PhD opportunities.
 这是一个用于发现、比较和跟进全球暑研、RA 与博士机会的科研申请工作台。
 
+## 🚧 项目状态：建设中的 Alpha
+
+> **本项目仍在搭建中，尚未提供公开在线服务。** 下方“已实现”表示功能已经进入仓库并通过自动测试，可以在本地运行；不代表已经完成生产部署、第三方平台审核或大规模真实用户验证。
+
+### ✅ 已经实现
+
+- **机会搜索与排序**：本地索引、中英查询扩展、相关性证据、过期过滤、去重、来源筛选和可选语义重排。
+- **申请行动工作台**：收藏与外部线索导入、阶段和下一步、结果记录、2–4 项比较、今日待办及 `.ics` 日历导出。
+- **简历工具**：PDF/DOCX/TXT 本地解析、用户确认后保存、项目匹配证据及不调用 LLM 的规则检查。
+- **邮件工作台**：中英文模板、私有草稿、多个邮箱、附件、发送前确认，以及 SMTP、Google 和 Microsoft 连接代码。
+- **社区基础功能**：科研招募、经验分享、讨论帖、评论、编辑和下架；已发布招募可进入机会搜索。
+- **个人推荐**：结合简历、偏好、收藏和近期行为的可解释排序，支持“不感兴趣”和关闭行为学习。
+- **工程基础**：登录隔离、CSRF、防滥用限流、管理员采集权限、Docker、健康检查和 GitHub Actions 自动测试。
+
+### 🔧 已实现，但需要外部配置或进一步实测
+
+- SerpApi、Gemini 在线补充搜索和可选 AI 润色需要各自的 API Key；没有 Key 时使用本地数据、规则匹配和免费模板。
+- Gmail、Outlook OAuth 需要管理员创建 OAuth 应用；QQ、网易和学校邮箱需要服务商允许的授权码或 SMTP 设置。
+- MediaCrawler 与用户本机 OpenCLI 搜索需要单独安装、登录相应平台，并遵守平台条款和频率限制。
+- 生产部署文件已经准备好，但目前没有创建付费云资源、公开域名或正式数据库备份。
+
+### 🧭 尚未实现或仍在规划
+
+- 导师/机构邮箱认证、实验室主页认领、结构化候选人处理和完整导师端。
+- 通用站内私信、自动邮件提醒、移动端应用及成熟的通知中心。
+- 科研合作需求板、能力与仪器目录、正式预约/支付，以及论文选题验证工作台。
+- 基于跨用户结果数据的协同推荐或学习排序；当前只使用可解释的本地规则和本人数据。
+- 订阅、付费墙、全平台自动 AI、用户自带 API Key 管理，以及面向机构的商业功能。
+- 面向公开生产环境的完整安全审计、监控告警、灾备和多实例数据库架构。
+
+**Project status (English):** active Alpha development. Core workflows are implemented and tested locally, while public hosting, provider credentials, institutional verification, production operations and the roadmap items above are not yet complete.
+
 ## 🇨🇳 中文介绍 (Chinese Introduction)
 
-### 🚀 核心亮点（2026.09.12 更新）
+### 🚀 核心亮点（2026.10.05 更新）
 平台把跨来源搜索、申请管理、简历检查、邮件与材料放在一条可追溯的工作流里。
 
 #### 1. 🌍 全球全平台数据覆盖 (Global Data Coverage)
@@ -50,7 +82,7 @@ A research application workspace for finding, comparing and following up on Summ
 
 ## 🇺🇸 English Introduction
 
-### 🚀 Key Features (Updated 2026.09.12)
+### 🚀 Key Features (Updated 2026.10.05)
 The platform joins cross-source search, application tracking, resume review, mail and materials in one traceable workflow.
 
 #### 1. 🌍 Global Multi-Platform Coverage
